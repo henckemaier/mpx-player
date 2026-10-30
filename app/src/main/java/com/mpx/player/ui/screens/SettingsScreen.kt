@@ -376,10 +376,12 @@ private fun DownloadBody(
 
         when (dl.status) {
             DownloadStatus.DONE -> {
+                val existed = if (dl.skipped > 0) " · ${dl.skipped} JÁ EXISTIAM" else ""
+                val unavail = if (dl.unavailable > 0) " · ${dl.unavailable} INDISPONÍVEIS" else ""
                 val msg = when {
-                    dl.tracks > 0 -> "OK: ${dl.tracks} NOVAS · ${dl.lyrics} COM LETRA" +
-                        if (dl.skipped > 0) " · ${dl.skipped} JÁ EXISTIAM" else ""
-                    dl.skipped > 0 -> "NENHUMA FAIXA NOVA · ${dl.skipped} JÁ EXISTIAM"
+                    dl.tracks > 0 -> "OK: ${dl.tracks} NOVAS · ${dl.lyrics} COM LETRA$existed$unavail"
+                    dl.skipped > 0 -> "NENHUMA FAIXA NOVA$existed$unavail"
+                    dl.unavailable > 0 -> "NENHUMA FAIXA · ${dl.unavailable} INDISPONÍVEIS"
                     else -> dl.overall.ifEmpty { "OK" }
                 }
                 ResultRow(msg, onClear)

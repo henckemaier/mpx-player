@@ -36,6 +36,8 @@ data class DownloadState(
     val tracks: Int = 0,
     val lyrics: Int = 0,
     val skipped: Int = 0,
+    /** Vídeos privados/indisponíveis ignorados durante o download. */
+    val unavailable: Int = 0,
     val error: String? = null,
 ) {
     val running: Boolean get() = status == DownloadStatus.INIT || status == DownloadStatus.DOWNLOADING || status == DownloadStatus.PUBLISHING
@@ -64,6 +66,12 @@ class Downloader(
     private val lyricsDir: File get() = File(context.filesDir, "lyrics")
 
     private val itemRegex = Regex("""item\s+(\d+)\s+of\s+(\d+)""", RegexOption.IGNORE_CASE)
+
+    /** Mensagens do yt-dlp para vídeos que não dá para baixar (privados, removidos, só p/ membros). */
+    private val unavailableRegex = Regex(
+        """private video|video unavailable|is not available|members[- ]only|has been removed|account.*(terminated|closed)|this video is unavailable""",
+        RegexOption.IGNORE_CASE,
+    )
 
     private suspend fun ensureInit() {
         if (initialized) return
@@ -110,18 +118,29 @@ class Downloader(
             }
 
             var archivedSkips = 0
-            YoutubeDL.getInstance().execute(request, processId) { progress, _, line ->
-                val l = line.trim()
-                if (l.contains("already been recorded in the archive")) archivedSkips++
-                val m = itemRegex.find(l)
-                _state.update { s ->
-                    s.copy(
-                        status = DownloadStatus.DOWNLOADING,
-                        progress = (progress / 100f).coerceIn(0f, 1f),
-                        overall = if (m != null) "BAIXANDO ${m.groupValues[1]}/${m.groupValues[2]}" else s.overall,
-                        line = if (l.isNotEmpty()) l else s.line,
-                    )
+            var unavailable = 0
+            try {
+                YoutubeDL.getInstance().execute(request, processId) { progress, _, line ->
+                    val l = line.trim()
+                    if (l.contains("already been recorded in the archive")) archivedSkips++
+                    val m = itemRegex.find(l)
+                    _state.update { s ->
+                        s.copy(
+                            status = DownloadStatus.DOWNLOADING,
+                            progress = (progress / 100f).coerceIn(0f, 1f),
+                            overall = if (m != null) "BAIXANDO ${m.groupValues[1]}/${m.groupValues[2]}" else s.overall,
+                            line = if (l.isNotEmpty()) l else s.line,
+                        )
+                    }
                 }
+            } catch (e: YoutubeDLException) {
+                // Vídeo privado/indisponível numa playlist faz o yt-dlp sair com erro mesmo
+                // já tendo baixado o resto. Se algo veio, ignoramos o problemático e seguimos
+                // publicando o que deu certo; se não veio nada, é falha de verdade.
+                if (canceled) throw e
+                val got = workDir.listFiles { f -> f.isFile && f.extension.equals("mp3", ignoreCase = true) }
+                if (got.isNullOrEmpty()) throw e
+                unavailable = unavailableRegex.findAll(e.message.orEmpty()).count()
             }
 
             if (canceled) {
@@ -165,6 +184,7 @@ class Downloader(
                     tracks = saved,
                     lyrics = withLyrics,
                     skipped = existed,
+                    unavailable = unavailable,
                     line = "",
                 )
             }
