@@ -159,12 +159,12 @@ class Downloader(
             var withLyrics = 0
             var skipped = 0
             for (file in files) {
-                if (existsInLibrary(file.name)) {
+                val meta = readTags(file)
+                if (existsInLibrary(meta)) {
                     skipped++
                     file.delete()
                     continue
                 }
-                val meta = readTags(file)
                 if (meta.title.isNotEmpty() && fetchAndStoreLyrics(file, meta)) withLyrics++
                 if (publishToMediaStore(file)) saved++
             }
@@ -308,14 +308,29 @@ class Downloader(
         }
     }.getOrNull()
 
-    /** True se já existe uma faixa com esse nome em Music/MPX (evita duplicar no re-download). */
-    private fun existsInLibrary(displayName: String): Boolean {
+    /**
+     * True se a biblioteca já tem a mesma música — por título + artista + duração (±2s), em
+     * qualquer pasta. Dedup semântico: não depende do nome do arquivo nem do índice na playlist,
+     * então pega a mesma faixa vinda de outra playlist/posição (ou de outro ID de vídeo) e não
+     * confunde músicas homônimas de artistas diferentes.
+     */
+    private fun existsInLibrary(meta: Tags): Boolean {
+        if (meta.title.isBlank()) return false
         val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val selection = "${MediaStore.Audio.Media.RELATIVE_PATH}=? AND ${MediaStore.Audio.Media.DISPLAY_NAME}=?"
-        val args = arrayOf("Music/MPX/", displayName)
+        val sel = StringBuilder("${MediaStore.Audio.Media.IS_MUSIC}!=0 AND ${MediaStore.Audio.Media.TITLE}=?")
+        val args = mutableListOf(meta.title)
+        meta.artist?.let {
+            sel.append(" AND ${MediaStore.Audio.Media.ARTIST}=?")
+            args.add(it)
+        }
+        if (meta.durationSec > 0) {
+            sel.append(" AND ${MediaStore.Audio.Media.DURATION} BETWEEN ? AND ?")
+            args.add(((meta.durationSec - 2) * 1000L).toString())
+            args.add(((meta.durationSec + 2) * 1000L).toString())
+        }
         return runCatching {
             context.contentResolver
-                .query(collection, arrayOf(MediaStore.Audio.Media._ID), selection, args, null)
+                .query(collection, arrayOf(MediaStore.Audio.Media._ID), sel.toString(), args.toTypedArray(), null)
                 ?.use { it.count > 0 } ?: false
         }.getOrDefault(false)
     }
