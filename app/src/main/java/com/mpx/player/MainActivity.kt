@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -43,11 +44,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.EqViewModel
 import com.mpx.player.ui.LibraryViewModel
+import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.PlayerViewModel
 import com.mpx.player.ui.SettingsViewModel
 import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.MpxHeader
 import com.mpx.player.ui.components.MpxNav
+import com.mpx.player.ui.components.MpxNavRail
 import com.mpx.player.ui.components.Tab
 import com.mpx.player.ui.components.scanlines
 import com.mpx.player.ui.mpxViewModel
@@ -61,6 +64,7 @@ import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen
 import com.mpx.player.ui.screens.SettingsScreen
+import com.mpx.player.ui.theme.LocalLandscape
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
 import kotlinx.coroutines.delay
@@ -119,10 +123,15 @@ private fun MpxRoot(container: AppContainer, settings: UserSettings) {
             .scanlines(st.scanlines),
     ) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(14.dp)) {
-          // O protótipo foi desenhado para ~362x760dp de área útil; em telas menores, encolhe tudo por igual.
+          val landscape = maxWidth > maxHeight
+          // Retrato desenhado p/ ~362x760dp; paisagem p/ ~760x360dp. Encolhe tudo por igual em telas menores.
           val base = LocalDensity.current
-          val k = minOf(1f, maxWidth.value / 362f, maxHeight.value / 760f).coerceAtLeast(0.8f)
-          CompositionLocalProvider(LocalDensity provides Density(base.density * k, base.fontScale)) {
+          val k = if (landscape) minOf(1f, maxWidth.value / 760f, maxHeight.value / 360f).coerceAtLeast(0.7f)
+                  else minOf(1f, maxWidth.value / 362f, maxHeight.value / 760f).coerceAtLeast(0.8f)
+          CompositionLocalProvider(
+              LocalLandscape provides landscape,
+              LocalDensity provides Density(base.density * k, base.fontScale),
+          ) {
           Column(
             Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -153,17 +162,40 @@ private fun MainShell(tab: Tab, onTab: (Tab) -> Unit, libraryFiles: Int, onReboo
     val playerVm = mpxViewModel { PlayerViewModel(it) }
     val player by playerVm.ui.collectAsStateWithLifecycle()
 
-    MpxHeader {
-        when (tab) {
-            Tab.PLAY -> StatusIndicators()
-            Tab.LIB -> HeaderLabel("${"%,d".format(libraryFiles).replace(',', '.')} FILES")
-            Tab.QUEUE -> HeaderLabel("QUEUE.BAT")
-            Tab.EQ -> HeaderLabel("EQ.EXE")
-            Tab.CFG -> HeaderLabel("CONFIG.SYS")
+    if (Mpx.landscape) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MpxNavRail(tab, onTab)
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MpxHeader { HeaderRight(tab, libraryFiles) }
+                MainContent(tab, onTab, player, playerVm, onReboot)
+            }
         }
+    } else {
+        MpxHeader { HeaderRight(tab, libraryFiles) }
+        MpxNav(tab, onTab)
+        MainContent(tab, onTab, player, playerVm, onReboot)
     }
-    MpxNav(tab, onTab)
+}
 
+@Composable
+private fun HeaderRight(tab: Tab, libraryFiles: Int) {
+    when (tab) {
+        Tab.PLAY -> StatusIndicators()
+        Tab.LIB -> HeaderLabel("${"%,d".format(libraryFiles).replace(',', '.')} FILES")
+        Tab.QUEUE -> HeaderLabel("QUEUE.BAT")
+        Tab.EQ -> HeaderLabel("EQ.EXE")
+        Tab.CFG -> HeaderLabel("CONFIG.SYS")
+    }
+}
+
+@Composable
+private fun MainContent(
+    tab: Tab,
+    onTab: (Tab) -> Unit,
+    player: PlayerUi,
+    playerVm: PlayerViewModel,
+    onReboot: () -> Unit,
+) {
     when (tab) {
         Tab.PLAY -> {
             val tech by playerVm.tech.collectAsStateWithLifecycle()

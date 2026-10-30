@@ -77,77 +77,109 @@ fun NowPlayingScreen(
     volume: VolumeState,
     actions: NowPlayingActions,
 ) {
+    if (Mpx.landscape) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.weight(0.44f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                InvertedBar("> NOW PLAYING", trkLabel(ui))
+                NpCoverMeta(ui, tech)
+                NpTitle(ui)
+            }
+            Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                NpProgress(ui, actions)
+                NpTransport(ui, actions)
+                VolumeRow(volume, actions.setVolume, actions.mute)
+                Spectrum(ui.isPlaying)
+                Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
+            }
+        }
+    } else {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            InvertedBar("> NOW PLAYING", trkLabel(ui))
+            NpCoverMeta(ui, tech)
+            NpTitle(ui)
+            NpProgress(ui, actions)
+            NpTransport(ui, actions)
+            VolumeRow(volume, actions.setVolume, actions.mute)
+            Spectrum(ui.isPlaying)
+            Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
+        }
+    }
+}
+
+private fun trkLabel(ui: PlayerUi) =
+    if (ui.queue.isEmpty()) "TRK --/--" else "TRK %02d/%02d".format(ui.index + 1, ui.queue.size)
+
+@Composable
+private fun NpCoverMeta(ui: PlayerUi, tech: TechInfo) {
     val c = Mpx.colors
     val t = ui.current
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        InvertedBar(
-            "> NOW PLAYING",
-            if (ui.queue.isEmpty()) "TRK --/--" else "TRK %02d/%02d".format(ui.index + 1, ui.queue.size),
+    Row(Modifier.fillMaxWidth().frame().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Cover(t, Modifier.size(128.dp).frame(c.accent), disc = true, scanlines = true)
+        Column(Modifier.height(128.dp).weight(1f), verticalArrangement = Arrangement.SpaceBetween) {
+            Column {
+                Txt("ART -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(t?.artist?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
+                Txt("ALB -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(t?.album?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
+            }
+            Column {
+                Txt("FMT - ${tech.format} ${tech.bitrate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt("RATE - ${tech.sampleRate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(tech.extra.ifEmpty { "---" }, size = 12.sp, color = c.dim, lineHeight = 17.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NpTitle(ui: PlayerUi) {
+    val c = Mpx.colors
+    val t = ui.current
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Txt(
+            (t?.title?.uppercase()?.replace(' ', '_') ?: "NO_SIGNAL") + blinkingCursor(),
+            Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
+            size = 40.sp, display = true, glow = true, lineHeight = 40.sp,
         )
+        Txt(
+            t?.dosPath ?: "C:\\MUSIC\\> _",
+            Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 3_000),
+            size = 12.sp, color = c.dim,
+        )
+    }
+}
 
-        // capa + metadados
-        Row(Modifier.fillMaxWidth().frame().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Cover(t, Modifier.size(128.dp).frame(c.accent), disc = true, scanlines = true)
-            Column(Modifier.height(128.dp).weight(1f), verticalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Txt("ART -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                    Txt(t?.artist?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
-                    Txt("ALB -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                    Txt(t?.album?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
-                }
-                Column {
-                    Txt("FMT - ${tech.format} ${tech.bitrate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                    Txt("RATE - ${tech.sampleRate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                    Txt(tech.extra.ifEmpty { "---" }, size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                }
-            }
+@Composable
+private fun NpProgress(ui: PlayerUi, actions: NowPlayingActions) {
+    val c = Mpx.colors
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val frac = if (ui.durationMs > 0) (ui.positionMs.toFloat() / ui.durationMs).coerceIn(0f, 1f) else 0f
+        SegmentBar(24, (frac * 24).roundToInt(), onSeek = actions.seek)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Txt(formatTime(ui.positionMs), size = 20.sp, display = true)
+            Txt("[${(frac * 100).roundToInt()}%]", size = 20.sp, display = true, color = c.dim)
+            Txt(formatTime(ui.durationMs), size = 20.sp, display = true)
         }
+    }
+}
 
-        // título
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Txt(
-                (t?.title?.uppercase()?.replace(' ', '_') ?: "NO_SIGNAL") + blinkingCursor(),
-                Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
-                size = 40.sp, display = true, glow = true, lineHeight = 40.sp,
-            )
-            Txt(
-                t?.dosPath ?: "C:\\MUSIC\\> _",
-                Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 3_000),
-                size = 12.sp, color = c.dim,
-            )
-        }
-
-        // progresso (toque/arraste para buscar)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val frac = if (ui.durationMs > 0) (ui.positionMs.toFloat() / ui.durationMs).coerceIn(0f, 1f) else 0f
-            SegmentBar(24, (frac * 24).roundToInt(), onSeek = actions.seek)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Txt(formatTime(ui.positionMs), size = 20.sp, display = true)
-                Txt("[${(frac * 100).roundToInt()}%]", size = 20.sp, display = true, color = c.dim)
-                Txt(formatTime(ui.durationMs), size = 20.sp, display = true)
-            }
-        }
-
-        // transporte
-        Row(Modifier.fillMaxWidth().height(50.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            val m = Modifier.weight(1f).fillMaxHeight()
-            IconButton(
-                MpxIcons.Shuffle, m, border = if (ui.shuffle) c.accent else c.line,
-                tint = if (ui.shuffle) c.accent else c.dim, iconSize = 22.dp, onClick = actions.shuffle,
-            )
-            IconButton(MpxIcons.Prev, m, border = c.accent, onClick = actions.previous)
-            IconButton(if (ui.isPlaying) MpxIcons.Pause else MpxIcons.Play, m, filled = true, onClick = actions.toggle)
-            IconButton(MpxIcons.Next, m, border = c.accent, onClick = actions.next)
-            IconButton(
-                if (ui.repeat == RepeatMode.ONE) MpxIcons.RepeatOne else MpxIcons.Repeat, m,
-                border = if (ui.repeat != RepeatMode.OFF) c.accent else c.line,
-                tint = if (ui.repeat != RepeatMode.OFF) c.accent else c.dim, iconSize = 22.dp, onClick = actions.repeat,
-            )
-        }
-
-        VolumeRow(volume, actions.setVolume, actions.mute)
-        Spectrum(ui.isPlaying)
-        Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
+@Composable
+private fun NpTransport(ui: PlayerUi, actions: NowPlayingActions) {
+    val c = Mpx.colors
+    Row(Modifier.fillMaxWidth().height(50.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        val m = Modifier.weight(1f).fillMaxHeight()
+        IconButton(
+            MpxIcons.Shuffle, m, border = if (ui.shuffle) c.accent else c.line,
+            tint = if (ui.shuffle) c.accent else c.dim, iconSize = 22.dp, onClick = actions.shuffle,
+        )
+        IconButton(MpxIcons.Prev, m, border = c.accent, onClick = actions.previous)
+        IconButton(if (ui.isPlaying) MpxIcons.Pause else MpxIcons.Play, m, filled = true, onClick = actions.toggle)
+        IconButton(MpxIcons.Next, m, border = c.accent, onClick = actions.next)
+        IconButton(
+            if (ui.repeat == RepeatMode.ONE) MpxIcons.RepeatOne else MpxIcons.Repeat, m,
+            border = if (ui.repeat != RepeatMode.OFF) c.accent else c.line,
+            tint = if (ui.repeat != RepeatMode.OFF) c.accent else c.dim, iconSize = 22.dp, onClick = actions.repeat,
+        )
     }
 }
 

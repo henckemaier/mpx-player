@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -154,6 +155,28 @@ fun MpxNav(selected: Tab, onSelect: (Tab) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Txt(tab.label, size = 20.sp, display = true, color = if (on) c.onAccent else c.accent)
+            }
+        }
+    }
+}
+
+/** Navegação vertical (barra lateral) para o modo paisagem. Mesmas abas/realce do [MpxNav]. */
+@Composable
+fun MpxNavRail(selected: Tab, onSelect: (Tab) -> Unit) {
+    val c = Mpx.colors
+    Column(Modifier.width(60.dp).fillMaxHeight().frame()) {
+        Tab.entries.forEachIndexed { i, tab ->
+            val on = tab == selected
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(if (on) c.accent else Color.Transparent)
+                    .tap { onSelect(tab) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Txt(tab.label, size = 16.sp, display = true, color = if (on) c.onAccent else c.accent, align = TextAlign.Center)
             }
         }
     }

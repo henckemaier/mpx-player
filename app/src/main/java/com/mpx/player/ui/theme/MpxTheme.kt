@@ -95,6 +95,9 @@ val LocalMpx = staticCompositionLocalOf {
     MpxStyle(colorsFor(0, false), Vt323, 1f, JetBrainsMono, glow = true, cursor = true, scanlines = true, coverStyle = 0, monoCovers = true)
 }
 
+/** True quando a tela está deitada; definido no shell e lido pelas telas para o layout de paisagem. */
+val LocalLandscape = staticCompositionLocalOf { false }
+
 @Composable
 fun MpxTheme(settings: UserSettings, content: @Composable () -> Unit) {
     val style = remember(settings) {
@@ -120,4 +123,5 @@ fun MpxTheme(settings: UserSettings, content: @Composable () -> Unit) {
 object Mpx {
     val style: MpxStyle @Composable get() = LocalMpx.current
     val colors: MpxColors @Composable get() = LocalMpx.current.c
+    val landscape: Boolean @Composable get() = LocalLandscape.current
 }

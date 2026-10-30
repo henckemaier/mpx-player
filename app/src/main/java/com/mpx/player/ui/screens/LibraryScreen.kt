@@ -127,7 +127,7 @@ private fun LibFilter.label() = when (this) {
 private fun AlbumGrid(albums: List<Album>, playingAlbum: Long?, onPlay: (Album) -> Unit) {
     val c = Mpx.colors
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(if (Mpx.landscape) 4 else 2),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 4.dp),
