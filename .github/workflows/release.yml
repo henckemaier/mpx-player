@@ -1,0 +1,58 @@
+name: Release APK
+
+# Compila o APK de release assinado e publica/atualiza a GitHub Release vX.Y a cada push na main.
+# Requer os secrets do repositório: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restaura keystore e credenciais (dos secrets)
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/mpx-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=mpx-release.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      - name: Build release assinado
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Lê versionName
+        id: ver
+        run: echo "version=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      - name: Renomeia o APK com a versão
+        run: cp app/build/outputs/apk/release/app-release.apk "mpx-player-v${{ steps.ver.outputs.version }}.apk"
+
+      - name: Publica/atualiza a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: MPX Player v${{ steps.ver.outputs.version }}
+          files: mpx-player-v${{ steps.ver.outputs.version }}.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
