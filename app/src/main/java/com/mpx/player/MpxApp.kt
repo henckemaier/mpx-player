@@ -8,6 +8,7 @@ import com.mpx.player.data.LibraryRepository
 import com.mpx.player.data.LyricsRepository
 import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.SettingsRepository
+import com.mpx.player.data.UpdateRepository
 import com.mpx.player.playback.PlayerController
 
 /** Injeção manual de dependências: um container por processo. */
@@ -19,6 +20,7 @@ class AppContainer(val context: Context) {
     val covers = CoverArtLoader(context)
     val player = PlayerController(context)
     val downloader = Downloader(context, library, lyrics, settings)
+    val updater = UpdateRepository(context)
 }
 
 class MpxApp : Application() {

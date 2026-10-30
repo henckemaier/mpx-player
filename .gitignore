@@ -2,6 +2,11 @@
 .gradle/
 /local.properties
 /.idea/
+
+# Assinatura de release (NÃO versionar — guardar backup seguro)
+/keystore.properties
+*.jks
+*.keystore
 .DS_Store
 /build/
 /app/build/

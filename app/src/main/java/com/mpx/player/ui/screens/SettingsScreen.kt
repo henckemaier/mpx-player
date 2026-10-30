@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mpx.player.data.DownloadState
 import com.mpx.player.data.DownloadStatus
+import com.mpx.player.data.UpdateState
+import com.mpx.player.data.UpdateStatus
 import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.SettingsUi
 import com.mpx.player.ui.SettingsViewModel
@@ -79,8 +81,8 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
     val s = ui.settings
     val context = LocalContext.current
     val dl by vm.download.collectAsStateWithLifecycle()
+    val up by vm.update.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableIntStateOf(0) }
-    var updateMsg by remember { mutableIntStateOf(0) }
 
     val pickPlaylist = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importPlaylist(uri)
@@ -230,7 +232,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
                     "APP" to "MPX//PLAYER",
-                    "VERSÃO" to "1.03 (BUILD 2026.10)",
+                    "VERSÃO" to "1.04 (BUILD 2026.10)",
                     "ENGINE" to "MPX AUDIO CORE · MEDIA3",
                     "LICENÇAS" to "OFL (VT323, JETBRAINS MONO)",
                     "AUTOR" to "[SEU NOME]",
@@ -240,10 +242,14 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
                         Txt(v, Modifier.weight(1f), size = 11.sp)
                     }
                 }
-                if (updateMsg > 0) Txt("> NENHUM SERVIDOR DE UPDATE CONFIGURADO", size = 11.sp, color = c.dim, maxLines = 2)
+                Spacer(Modifier.height(2.dp))
+                UpdateStatusRow(up, onInstall = vm::installUpdate, onClear = vm::clearUpdate)
             }
             Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp).height(44.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton("CHECK UPDATE", Modifier.weight(1f).fillMaxHeight()) { updateMsg++ }
+                TextButton(
+                    if (up.status == UpdateStatus.CHECKING) "VERIFICANDO..." else "CHECK UPDATE",
+                    Modifier.weight(1f).fillMaxHeight(), onClick = vm::checkUpdate,
+                )
                 TextButton("REBOOT ⟳", Modifier.weight(1f).fillMaxHeight(), border = c.accent, onClick = onReboot)
             }
         }
@@ -445,6 +451,33 @@ private fun ResultRow(msg: String, onClear: () -> Unit) {
     ) {
         Txt(msg, Modifier.weight(1f), size = 11.sp, color = c.onAccent, maxLines = 2)
         Txt("[X]", size = 11.sp, color = c.onAccent)
+    }
+}
+
+@Composable
+private fun UpdateStatusRow(up: UpdateState, onInstall: () -> Unit, onClear: () -> Unit) {
+    val c = Mpx.colors
+    when (up.status) {
+        UpdateStatus.IDLE -> Unit
+        UpdateStatus.CHECKING -> Txt("> VERIFICANDO ATUALIZAÇÕES ...", size = 11.sp, color = c.dim, maxLines = 2)
+        UpdateStatus.UP_TO_DATE -> Txt("> NA ÚLTIMA VERSÃO (v${up.latest})", size = 11.sp, color = c.dim, maxLines = 2)
+        UpdateStatus.AVAILABLE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Txt("> NOVA VERSÃO v${up.latest} DISPONÍVEL", size = 11.sp, maxLines = 2)
+            if (up.notes.isNotBlank()) Txt(up.notes, size = 10.sp, color = c.dim, maxLines = 3)
+            up.error?.let { Txt(it, size = 10.sp, color = c.dim, maxLines = 2) }
+            TextButton("> BAIXAR E INSTALAR", Modifier.fillMaxWidth().height(40.dp), filled = true, onClick = onInstall)
+        }
+        UpdateStatus.DOWNLOADING -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Txt("> BAIXANDO v${up.latest} ...", size = 11.sp, maxLines = 1)
+            SegmentBar(20, (up.progress * 20).toInt().coerceIn(0, 20), height = 16.dp)
+        }
+        UpdateStatus.ERROR -> Row(
+            Modifier.fillMaxWidth().tap(onClick = onClear),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Txt("> ${up.error ?: "ERRO"}", Modifier.weight(1f), size = 11.sp, color = c.dim, maxLines = 2)
+            Txt("[X]", size = 11.sp, color = c.dim)
+        }
     }
 }
 

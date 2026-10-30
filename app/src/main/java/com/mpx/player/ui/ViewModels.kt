@@ -279,4 +279,11 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
     fun cancelDownload() = app.downloader.cancel()
     fun updateYtDlp() = run { app.downloader.updateEngine() }
     fun clearDownload() = app.downloader.reset()
+
+    // ---- Auto-update do app (GitHub Releases)
+    val update = app.updater.state
+
+    fun checkUpdate() = run { app.updater.check() }
+    fun installUpdate() = run { app.updater.downloadAndInstall() }
+    fun clearUpdate() = app.updater.reset()
 }
