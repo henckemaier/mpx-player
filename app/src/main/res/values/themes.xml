@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Mpx" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/mpx_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+    <color name="mpx_bg">#040704</color>
+    <color name="mpx_accent">#3DFF8F</color>
+</resources>
