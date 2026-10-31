@@ -37,6 +37,7 @@ import com.mpx.player.model.Track
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxColors
 import androidx.compose.ui.platform.LocalContext
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -49,9 +50,16 @@ fun Cover(track: Track?, modifier: Modifier = Modifier, disc: Boolean = false, s
     val st = Mpx.style
     val c = st.c
     val loader = (LocalContext.current.applicationContext as MpxApp).container.covers
-    val art by produceState<CoverArt?>(null, track?.albumId, st.coverStyle, st.monoCovers, c.accent, c.bg) {
-        value = if (track == null || st.coverStyle == 0) null
-        else loader.load(track.albumId, track.uri, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
+    val art by produceState<CoverArt?>(null, track?.albumId, track?.coverOverride, st.coverStyle, st.monoCovers, c.accent, c.bg) {
+        val t = track
+        value = when {
+            t == null -> null
+            // Capa personalizada é escolha explícita do usuário: aparece em qualquer estilo.
+            t.coverOverride != null ->
+                loader.loadFile(File(t.coverOverride), st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
+            st.coverStyle == 0 -> null
+            else -> loader.load(t.albumId, t.uri, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
+        }
     }
     Box(modifier.background(c.panel), contentAlignment = Alignment.Center) {
         when (val a = art) {
@@ -66,6 +74,31 @@ fun Cover(track: Track?, modifier: Modifier = Modifier, disc: Boolean = false, s
             null -> GeneratedCover(seed = track?.album ?: "", title = track?.album ?: "MPX", disc = disc, colors = c)
         }
         if (scanlines) Box(Modifier.fillMaxSize().scanlines(true))
+    }
+}
+
+/** Capa de playlist: foto (filtrada no estilo do app) ou arte gerada a partir do nome. */
+@Composable
+fun PlaylistCover(photo: String?, name: String, modifier: Modifier = Modifier) {
+    val st = Mpx.style
+    val c = st.c
+    val loader = (LocalContext.current.applicationContext as MpxApp).container.covers
+    val art by produceState<CoverArt?>(null, photo, st.coverStyle, st.monoCovers, c.accent, c.bg) {
+        value = if (photo == null) null
+        else loader.loadFile(File(photo), st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
+    }
+    Box(modifier.background(c.panel), contentAlignment = Alignment.Center) {
+        when (val a = art) {
+            is CoverArt.Image -> Image(
+                bitmap = a.bitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                filterQuality = if (a.pixelated) FilterQuality.None else FilterQuality.Medium,
+            )
+            is CoverArt.Ascii -> AsciiArt(a.rows)
+            null -> GeneratedCover(seed = name, title = name, disc = false, colors = c)
+        }
     }
 }
 

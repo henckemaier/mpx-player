@@ -57,7 +57,6 @@ import com.mpx.player.ui.mpxViewModel
 import com.mpx.player.ui.screens.BootScreen
 import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
-import com.mpx.player.ui.screens.LibraryActions
 import com.mpx.player.ui.screens.LibraryScreen
 import com.mpx.player.ui.screens.NowPlayingActions
 import com.mpx.player.ui.screens.NowPlayingScreen
@@ -201,8 +200,10 @@ private fun MainContent(
             val tech by playerVm.tech.collectAsStateWithLifecycle()
             val lyrics by playerVm.lyrics.collectAsStateWithLifecycle()
             val volume by playerVm.volume.collectAsStateWithLifecycle()
+            val favorite by playerVm.favorite.collectAsStateWithLifecycle()
+            val playlists by playerVm.playlists.collectAsStateWithLifecycle()
             NowPlayingScreen(
-                player, tech, lyrics, volume,
+                player, tech, lyrics, volume, favorite, playlists,
                 NowPlayingActions(
                     toggle = playerVm::toggle,
                     next = { playerVm.next() },
@@ -213,24 +214,15 @@ private fun MainContent(
                     setVolume = playerVm::setVolume,
                     mute = playerVm::toggleMute,
                     openLibrary = { onTab(Tab.LIB) },
+                    toggleFavorite = playerVm::toggleFavorite,
+                    addToPlaylist = playerVm::addCurrentToPlaylist,
                 ),
             )
         }
         Tab.LIB -> {
             val vm = mpxViewModel { LibraryViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            LibraryScreen(
-                ui, player,
-                LibraryActions(
-                    setQuery = vm::setQuery,
-                    setFilter = vm::setFilter,
-                    toggleSort = vm::toggleSort,
-                    playAlbum = { vm.playAlbum(it); onTab(Tab.PLAY) },
-                    playArtist = { vm.playArtist(it); onTab(Tab.PLAY) },
-                    playTrack = { list, i -> vm.playTrack(list, i); onTab(Tab.PLAY) },
-                    openPlayer = { onTab(Tab.PLAY) },
-                ),
-            )
+            LibraryScreen(ui, player, vm, onOpenPlayer = { onTab(Tab.PLAY) })
         }
         Tab.QUEUE -> QueueScreen(
             player,

@@ -31,4 +31,8 @@ object MpxIcons {
     val RepeatOne = stroked("repeat1", "M4 11V8h14M15 5l3 3-3 3M20 13v3H6M9 19l-3-3 3-3M12 10v5")
     val Volume = stroked("vol", "M4 9h4l5-4v14l-5-4H4zM17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11")
     val Muted = stroked("mute", "M4 9h4l5-4v14l-5-4H4zM17 9l5 6M22 9l-5 6")
+
+    val Bookmark = stroked("bookmark", "M6 3h12v18l-6-4-6 4z")
+    val BookmarkOn = filled("bookmarkOn", "M6 3h12v18l-6-4-6 4z")
+    val Plus = stroked("plus", "M12 5v14M5 12h14")
 }

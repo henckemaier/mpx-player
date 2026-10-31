@@ -64,6 +64,9 @@ android {
             useLegacyPackaging = true
         }
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -84,4 +87,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.guava)
     implementation(libs.youtubedl.android.library)
     implementation(libs.youtubedl.android.ffmpeg)
+
+    // Testes unitários (fora do versionamento — ver .gitignore)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.json:json:20231013")
 }

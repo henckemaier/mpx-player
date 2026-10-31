@@ -16,7 +16,12 @@ data class Track(
     val bitrate: Int?,
     val trackNumber: Int,
     val year: Int?,
+    /** Caminho de uma capa personalizada (override do app); null = usa a arte embutida. */
+    val coverOverride: String? = null,
 ) {
+    /** Identidade estável do arquivo (sobrevive a mudanças do _ID do MediaStore). */
+    val key: String get() = (relativePath + displayName).lowercase()
+
     /** Caminho no estilo DOS, ex.: C:\MUSIC\NULL_SECTOR\04_SIGNAL_DECAY.MP3 */
     val dosPath: String
         get() {
@@ -51,6 +56,26 @@ data class Artist(
 ) {
     val albumCount: Int get() = tracks.map { it.albumId }.distinct().size
 }
+
+/** Playlist do usuário. `locked` = Favoritos (não renomeia nem exclui). `photo` = caminho da capa. */
+data class Playlist(
+    val id: String,
+    val name: String,
+    val photo: String? = null,
+    val trackKeys: List<String> = emptyList(),
+    val locked: Boolean = false,
+) {
+    companion object {
+        const val FAVORITES_ID = "favoritos"
+        const val FAVORITES_NAME = "FAVORITOS"
+    }
+}
+
+/** Personalização de uma faixa, só dentro do MPX (não altera o arquivo). */
+data class TrackOverride(
+    val title: String? = null,
+    val cover: String? = null,
+)
 
 data class LyricLine(val timeMs: Long, val text: String)
 

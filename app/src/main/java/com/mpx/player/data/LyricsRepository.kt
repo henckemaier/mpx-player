@@ -6,6 +6,8 @@ import androidx.documentfile.provider.DocumentFile
 import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -17,6 +19,10 @@ class LyricsRepository(private val context: Context) {
 
     private var indexedTree: String? = null
     private var index: Map<String, Uri> = emptyMap()
+
+    /** Incrementa quando as letras mudam, para o Now Playing recarregar a faixa atual na hora. */
+    private val _version = MutableStateFlow(0)
+    val version: StateFlow<Int> = _version
 
     suspend fun countLrc(treeUri: String?): Int = withContext(Dispatchers.IO) {
         if (treeUri == null) 0 else ensureIndex(treeUri).size
@@ -48,6 +54,15 @@ class LyricsRepository(private val context: Context) {
 
     fun invalidate() {
         indexedTree = null
+        _version.value++
+    }
+
+    /** Grava (ou apaga, se vazio) a letra editada da faixa em filesDir/lyrics/<base>.lrc. */
+    suspend fun save(track: Track, text: String) = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "lyrics").apply { mkdirs() }
+        val file = File(dir, track.displayName.substringBeforeLast('.').lowercase() + ".lrc")
+        runCatching { if (text.isBlank()) file.delete() else file.writeText(text) }
+        Unit
     }
 
     private fun ensureIndex(treeUri: String): Map<String, Uri> {
