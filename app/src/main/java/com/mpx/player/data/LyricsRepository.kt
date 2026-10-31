@@ -74,13 +74,27 @@ class LyricsRepository(private val context: Context) {
     }
 
     /**
-     * Busca a letra sincronizada no LRCLIB pelos metadados da faixa. Retorna o conteúdo `.lrc`
-     * (com timestamps) ou null se não houver. Operação de rede — chame fora da thread principal.
+     * Busca a letra SINCRONIZADA tentando as fontes em ordem (LRCLIB, depois NetEase). Retorna o
+     * conteúdo `.lrc` (com timestamps) da primeira fonte que encontrar, ou null. Operação de rede —
+     * chame fora da thread principal. Para adicionar uma fonte nova, implemente uma função
+     * `(title, artist, album, durationSec) -> String?` e inclua-a em [providers].
      */
     fun fetchSynced(title: String, artist: String?, album: String?, durationSec: Long): String? {
         if (title.isBlank()) return null
+        for (provider in providers) {
+            val lrc = runCatching { provider(title, artist, album, durationSec) }.getOrNull()
+            if (!lrc.isNullOrBlank()) return lrc
+        }
+        return null
+    }
+
+    /** Fontes de letra sincronizada, tentadas nesta ordem. Acrescente novas fontes aqui. */
+    private val providers: List<(String, String?, String?, Long) -> String?> =
+        listOf(::fetchFromLrclib, ::fetchFromNetease)
+
+    /** LRCLIB (lrclib.net): correspondência exata por metadados, depois busca por título/artista. */
+    private fun fetchFromLrclib(title: String, artist: String?, album: String?, durationSec: Long): String? {
         val art = artist ?: ""
-        // 1) correspondência exata (tolerância de ±2s no LRCLIB)
         getJson(
             "https://lrclib.net/api/get?" + query(
                 "track_name" to title,
@@ -89,7 +103,6 @@ class LyricsRepository(private val context: Context) {
                 "duration" to durationSec.toString(),
             ),
         )?.let { obj -> syncedOf(obj)?.let { return it } }
-        // 2) busca por título/artista
         getJsonArray("https://lrclib.net/api/search?" + query("track_name" to title, "artist_name" to art))
             ?.let { arr ->
                 for (i in 0 until arr.length()) {
@@ -97,6 +110,38 @@ class LyricsRepository(private val context: Context) {
                 }
             }
         return null
+    }
+
+    /**
+     * NetEase (music.163.com): busca a faixa, escolhe o resultado de duração mais próxima e lê a
+     * letra sincronizada (`lrc.lyric`). API não-oficial — usada só como fallback, com headers de
+     * navegador; qualquer falha é engolida pela cadeia em [fetchSynced].
+     */
+    private fun fetchFromNetease(title: String, artist: String?, album: String?, durationSec: Long): String? {
+        val art = artist ?: ""
+        val search = getJson(
+            "https://music.163.com/api/search/get?" + query("s" to "$title $art".trim(), "type" to "1", "limit" to "8"),
+            NETEASE_HEADERS,
+        ) ?: return null
+        val songs = search.optJSONObject("result")?.optJSONArray("songs") ?: return null
+        var bestId = -1L
+        var bestDelta = Long.MAX_VALUE
+        for (i in 0 until songs.length()) {
+            val s = songs.optJSONObject(i) ?: continue
+            val id = s.optLong("id", -1L)
+            if (id < 0) continue
+            val durMs = s.optLong("duration", 0L)
+            val delta = if (durationSec > 0 && durMs > 0) kotlin.math.abs(durMs - durationSec * 1000) else 0L
+            if (bestId < 0 || delta < bestDelta) {
+                bestId = id
+                bestDelta = delta
+            }
+        }
+        if (bestId < 0) return null
+        if (durationSec > 0 && bestDelta > 8000) return null // nenhuma faixa com duração próxima (±8s)
+        val lyr = getJson("https://music.163.com/api/song/lyric?id=$bestId&lv=1&kv=1&tv=1", NETEASE_HEADERS) ?: return null
+        val lrc = lyr.optJSONObject("lrc")?.optString("lyric")?.takeIf { it.isNotBlank() } ?: return null
+        return lrc.takeIf { TAG.containsMatchIn(it) } // só aceita se for sincronizada (tem timestamps)
     }
 
     /**
@@ -132,16 +177,20 @@ class LyricsRepository(private val context: Context) {
     private fun query(vararg params: Pair<String, String>): String =
         params.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, "UTF-8") }
 
-    private fun getJson(url: String): JSONObject? = httpGet(url)?.let { runCatching { JSONObject(it) }.getOrNull() }
-    private fun getJsonArray(url: String): JSONArray? = httpGet(url)?.let { runCatching { JSONArray(it) }.getOrNull() }
+    private fun getJson(url: String, headers: Map<String, String> = emptyMap()): JSONObject? =
+        httpGet(url, headers)?.let { runCatching { JSONObject(it) }.getOrNull() }
 
-    private fun httpGet(url: String): String? = runCatching {
+    private fun getJsonArray(url: String, headers: Map<String, String> = emptyMap()): JSONArray? =
+        httpGet(url, headers)?.let { runCatching { JSONArray(it) }.getOrNull() }
+
+    private fun httpGet(url: String, headers: Map<String, String> = emptyMap()): String? = runCatching {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8000
             readTimeout = 8000
             setRequestProperty("User-Agent", "MPX-Player (https://github.com/henckemaier/mpx-player)")
             setRequestProperty("Accept", "application/json")
+            headers.forEach { (k, v) -> setRequestProperty(k, v) }
         }
         try {
             if (conn.responseCode != 200) return null
@@ -150,6 +199,13 @@ class LyricsRepository(private val context: Context) {
             conn.disconnect()
         }
     }.getOrNull()
+
+    /** NetEase exige Referer/UA de navegador nas rotas /api legadas. */
+    private val NETEASE_HEADERS = mapOf(
+        "Referer" to "https://music.163.com",
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    )
 
     private fun ensureIndex(treeUri: String): Map<String, Uri> {
         if (indexedTree == treeUri) return index
