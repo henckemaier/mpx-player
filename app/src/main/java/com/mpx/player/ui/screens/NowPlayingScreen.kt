@@ -550,11 +550,15 @@ private fun LyricsView(lyrics: List<LyricLine>, cur: Int, positionMs: Long, play
     val scroll = rememberScrollState()
     LaunchedEffect(scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Quantas linhas passadas mostrar: o bastante para preencher a altura disponível (mantendo a
+        // linha atual encostada no rodapé) em vez de deixar metade do painel vazio quando ele está
+        // expandido. O que sobra rola para fora do topo, então superestimar é seguro.
+        val history = ((maxHeight / 19.dp).toInt() + 2).coerceAtLeast(3)
         Column(
             Modifier.fillMaxWidth().heightIn(min = maxHeight).verticalScroll(scroll),
             verticalArrangement = Arrangement.Bottom,
         ) {
-            for (k in 3 downTo 1) {
+            for (k in history downTo 1) {
                 val i = cur - k
                 if (i >= 0) LyricRow(lyrics[i], dim = true)
             }

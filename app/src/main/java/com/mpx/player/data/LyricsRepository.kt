@@ -6,10 +6,18 @@ import androidx.documentfile.provider.DocumentFile
 import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import kotlin.coroutines.coroutineContext
 
 /**
  * Procura um arquivo .lrc com o mesmo nome da faixa dentro da pasta escolhida pelo
@@ -64,6 +72,84 @@ class LyricsRepository(private val context: Context) {
         runCatching { if (text.isBlank()) file.delete() else file.writeText(text) }
         Unit
     }
+
+    /**
+     * Busca a letra sincronizada no LRCLIB pelos metadados da faixa. Retorna o conteúdo `.lrc`
+     * (com timestamps) ou null se não houver. Operação de rede — chame fora da thread principal.
+     */
+    fun fetchSynced(title: String, artist: String?, album: String?, durationSec: Long): String? {
+        if (title.isBlank()) return null
+        val art = artist ?: ""
+        // 1) correspondência exata (tolerância de ±2s no LRCLIB)
+        getJson(
+            "https://lrclib.net/api/get?" + query(
+                "track_name" to title,
+                "artist_name" to art,
+                "album_name" to (album ?: ""),
+                "duration" to durationSec.toString(),
+            ),
+        )?.let { obj -> syncedOf(obj)?.let { return it } }
+        // 2) busca por título/artista
+        getJsonArray("https://lrclib.net/api/search?" + query("track_name" to title, "artist_name" to art))
+            ?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    syncedOf(arr.optJSONObject(i) ?: continue)?.let { return it }
+                }
+            }
+        return null
+    }
+
+    /**
+     * Para cada faixa SEM `.lrc` salvo em filesDir/lyrics, busca a letra no LRCLIB e grava.
+     * Retorna quantas letras foram baixadas. Reporta progresso (concluídas, total, achadas) e
+     * respeita o cancelamento do coroutine. As que já têm letra são puladas sem rede.
+     */
+    suspend fun syncMissing(
+        tracks: List<Track>,
+        onProgress: (done: Int, total: Int, found: Int) -> Unit,
+    ): Int = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "lyrics").apply { mkdirs() }
+        val total = tracks.size
+        var found = 0
+        tracks.forEachIndexed { i, t ->
+            coroutineContext.ensureActive()
+            onProgress(i, total, found)
+            val base = t.displayName.substringBeforeLast('.').lowercase()
+            val file = File(dir, "$base.lrc")
+            if (file.isFile && file.length() > 0) return@forEachIndexed // já tem letra — pula
+            val lrc = runCatching { fetchSynced(t.title, t.artist, t.album, t.durationMs / 1000) }.getOrNull()
+            if (!lrc.isNullOrBlank()) runCatching { file.writeText(lrc) }.onSuccess { found++ }
+            delay(150) // educado com o LRCLIB entre requisições
+        }
+        onProgress(total, total, found)
+        _version.value++ // faz o Now Playing recarregar a faixa atual
+        found
+    }
+
+    private fun syncedOf(obj: JSONObject): String? =
+        obj.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" }
+
+    private fun query(vararg params: Pair<String, String>): String =
+        params.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, "UTF-8") }
+
+    private fun getJson(url: String): JSONObject? = httpGet(url)?.let { runCatching { JSONObject(it) }.getOrNull() }
+    private fun getJsonArray(url: String): JSONArray? = httpGet(url)?.let { runCatching { JSONArray(it) }.getOrNull() }
+
+    private fun httpGet(url: String): String? = runCatching {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8000
+            readTimeout = 8000
+            setRequestProperty("User-Agent", "MPX-Player (https://github.com/henckemaier/mpx-player)")
+            setRequestProperty("Accept", "application/json")
+        }
+        try {
+            if (conn.responseCode != 200) return null
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
+    }.getOrNull()
 
     private fun ensureIndex(treeUri: String): Map<String, Uri> {
         if (indexedTree == treeUri) return index
