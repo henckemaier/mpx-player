@@ -21,8 +21,8 @@ android {
         applicationId = "com.mpx.player"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.5.0"
+        versionCode = 4
+        versionName = "1.6.0"
 
         // yt-dlp/Python/FFmpeg nativos só p/ arm64 (APK menor; cobre aparelhos do minSdk 29+).
         ndk {
