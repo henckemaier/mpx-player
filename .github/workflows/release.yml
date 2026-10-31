@@ -28,9 +28,9 @@ jobs:
 
       - name: Restaura keystore e credenciais (dos secrets)
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/mpx-release.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.jks
           cat > keystore.properties <<EOF
-          storeFile=mpx-release.jks
+          storeFile=release.jks
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyAlias=${{ secrets.KEY_ALIAS }}
           keyPassword=${{ secrets.KEY_PASSWORD }}

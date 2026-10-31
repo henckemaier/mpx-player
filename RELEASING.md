@@ -72,8 +72,8 @@ Mantemos um [`CHANGELOG.md`](CHANGELOG.md) no formato
 
 ## 4. Assinatura (release keystore)
 
-Os APKs são assinados com `app/mpx-release.jks` (alias `mpx`). Esse arquivo e o `keystore.properties`
-**não vão para o git** (estão no `.gitignore`).
+Os APKs são assinados com a **keystore de release** do projeto (um `.jks` em `app/`, com alias
+próprio). Esse arquivo e o `keystore.properties` **não vão para o git** (estão no `.gitignore`).
 
 - **Local:** o build lê `keystore.properties` na raiz do projeto.
 - **CI:** os valores vêm de *secrets* do repositório:

@@ -105,8 +105,9 @@ A busca de letras é uma **cadeia de provedores** extensível (`LRCLIB → NetEa
 
 ### Permissões
 
-`INTERNET` · `READ_MEDIA_AUDIO` · `REQUEST_INSTALL_PACKAGES` · `FOREGROUND_SERVICE` ·
-`FOREGROUND_SERVICE_MEDIA_PLAYBACK` · `MODIFY_AUDIO_SETTINGS` · `WAKE_LOCK`.
+`INTERNET` · `READ_MEDIA_AUDIO` (API 33+) · `READ_EXTERNAL_STORAGE` (≤ API 32) ·
+`REQUEST_INSTALL_PACKAGES` · `FOREGROUND_SERVICE` · `FOREGROUND_SERVICE_MEDIA_PLAYBACK` ·
+`MODIFY_AUDIO_SETTINGS` · `WAKE_LOCK`.
 
 ---
 
@@ -185,15 +186,19 @@ O APK sai em `app/build/outputs/apk/<tipo>/`.
 
 ### Assinatura de release
 
-Os builds de release são assinados com uma keystore **fora do git**. Crie um `keystore.properties`
-na raiz (ignorado pelo `.gitignore`):
+Os builds de release são assinados com uma keystore **fora do git**. Coloque o `.jks` dentro de
+**`app/`** (ex.: `app/release.jks`) e crie um `keystore.properties` **na raiz** do projeto
+(ambos ignorados pelo `.gitignore`):
 
 ```properties
-storeFile=mpx-release.jks
+storeFile=release.jks
 storePassword=••••••
-keyAlias=mpx
+keyAlias=sua-chave
 keyPassword=••••••
 ```
+
+> `storeFile` é resolvido **relativo ao módulo `app/`**, então o `.jks` fica em `app/` mesmo o
+> `keystore.properties` ficando na raiz.
 
 Sem esse arquivo, o build de release cai na **debug keystore** (não instala por cima de um release
 assinado com a chave verdadeira). No CI, os valores vêm de *secrets* do repositório
