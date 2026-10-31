@@ -232,7 +232,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
                     "APP" to "MPX//PLAYER",
-                    "VERSÃO" to "1.04 (BUILD 2026.10)",
+                    "VERSÃO" to "1.5.0 (BUILD 2026.10)",
                     "ENGINE" to "MPX AUDIO CORE · MEDIA3",
                     "LICENÇAS" to "OFL (VT323, JETBRAINS MONO)",
                     "AUTOR" to "[SEU NOME]",

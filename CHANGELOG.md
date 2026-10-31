@@ -5,6 +5,19 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-30
+
+### Adicionado
+- **Playlists** (nova aba na biblioteca, antes de ÁLBUNS): criar, editar e excluir; foto opcional
+  filtrada no estilo do app; playlist **Favoritos** fixa (não renomeia nem exclui).
+- **Toque longo numa faixa** (FAIXAS) → **adicionar a playlist**, **editar** (nome/foto/letra, só
+  dentro do MPX) ou **excluir** o arquivo do aparelho (com confirmação dupla).
+- **Botão de marcador** no Now Playing: toque favorita; toque longo escolhe a playlist.
+
+### Corrigido
+- Persistência de playlists/edições mais robusta (escrita atômica e tolerante a arquivo corrompido),
+  orientação de fotos (EXIF) e letra editada que recarrega na hora.
+
 ## [1.04] - 2026-10-30
 
 ### Adicionado
@@ -36,5 +49,6 @@ Versão base — primeira no GitHub.
 - Player base: biblioteca via MediaStore, fila, **equalizador 10 bandas**, temas/fósforos, estética
   CRT (scanlines, glow, ASCII/dither nas capas), letras no Now Playing com quebra de linha.
 
-[Unreleased]: https://github.com/henckemaier/mpx-player/compare/v1.04...HEAD
+[Unreleased]: https://github.com/henckemaier/mpx-player/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/henckemaier/mpx-player/releases/tag/v1.5.0
 [1.04]: https://github.com/henckemaier/mpx-player/releases/tag/v1.04
