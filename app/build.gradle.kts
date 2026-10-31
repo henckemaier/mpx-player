@@ -57,6 +57,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         // youtubedl-android extrai as libs nativas em runtime.

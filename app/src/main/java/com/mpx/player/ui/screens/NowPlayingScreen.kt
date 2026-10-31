@@ -6,8 +6,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,7 +44,9 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -63,6 +70,7 @@ import com.mpx.player.ui.components.frame
 import com.mpx.player.ui.components.tap
 import com.mpx.player.ui.theme.Mpx
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 data class NowPlayingActions(
@@ -96,12 +104,12 @@ fun NowPlayingScreen(
                 InvertedBar("> NOW PLAYING", trkLabel(ui))
                 NpCoverMeta(ui, tech)
                 NpTitle(ui)
+                Spectrum(ui.isPlaying)
             }
             Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NpProgress(ui, actions)
                 NpTransport(ui, actions, favorite) { showPicker = true }
                 VolumeRow(volume, actions.setVolume, actions.mute)
-                Spectrum(ui.isPlaying)
                 Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
             }
         }
@@ -112,9 +120,7 @@ fun NowPlayingScreen(
             NpTitle(ui)
             NpProgress(ui, actions)
             NpTransport(ui, actions, favorite) { showPicker = true }
-            VolumeRow(volume, actions.setVolume, actions.mute)
-            Spectrum(ui.isPlaying)
-            Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
+            NpConsoleRegionPortrait(Modifier.weight(1f), ui, tech, lyrics, volume, actions)
         }
     }
     if (showPicker) {
@@ -288,6 +294,125 @@ private fun VolumeRow(volume: VolumeState, onSet: (Float) -> Unit, onMute: () ->
     }
 }
 
+/** Altura aproximada do bloco SPECTRUM + VOLUME (horizontal) + espaçamento — o quanto o console
+ *  cresce para cima ao ser puxado, cobrindo esses dois painéis. */
+private val COVERED_H = 134.dp
+
+/**
+ * Região inferior do retrato: SPECTRUM + VOLUME ao fundo e o CONSOLE (CMD.LOG/LYRICS) por cima.
+ * O console pode ser puxado para cima pela alça, crescendo sobre esses dois painéis. Quando
+ * expandido, o VOLUME reaparece "em pé" fixado na direita, ainda operável.
+ */
+@Composable
+private fun NpConsoleRegionPortrait(
+    modifier: Modifier,
+    ui: PlayerUi,
+    tech: TechInfo,
+    lyrics: List<LyricLine>,
+    volume: VolumeState,
+    actions: NowPlayingActions,
+) {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val expand = remember { Animatable(0f) }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val totalPx = constraints.maxHeight.toFloat()
+        val coveredPx = with(density) { COVERED_H.toPx() }.coerceAtMost(totalPx)
+        val collapsedPx = (totalPx - coveredPx).coerceAtLeast(0f)
+        val frac = expand.value
+        val consoleDp = with(density) { (collapsedPx + frac * coveredPx).toDp() }
+        val standingVolume = frac > 0.4f
+
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spectrum(ui.isPlaying)
+            VolumeRow(volume, actions.setVolume, actions.mute)
+        }
+        Console(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(consoleDp),
+            ui, tech, lyrics, onEmpty = actions.openLibrary,
+            contentEndPadding = if (standingVolume) 52.dp else 0.dp,
+            topBar = {
+                ConsoleGrip(
+                    expanded = frac > 0.5f,
+                    onDrag = { dy ->
+                        if (coveredPx > 0f) scope.launch { expand.snapTo((expand.value - dy / coveredPx).coerceIn(0f, 1f)) }
+                    },
+                    onStop = { scope.launch { expand.animateTo(if (expand.value > 0.5f) 1f else 0f) } },
+                    onToggle = { scope.launch { expand.animateTo(if (expand.value > 0.5f) 0f else 1f) } },
+                )
+            },
+        )
+        if (standingVolume) {
+            VerticalVolume(
+                volume, actions.setVolume, actions.mute,
+                Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 4.dp, bottom = 4.dp).width(46.dp).fillMaxHeight(),
+            )
+        }
+    }
+}
+
+/** Alça para puxar o console para cima/baixo (arrastar) ou alternar (toque). */
+@Composable
+private fun ConsoleGrip(expanded: Boolean, onDrag: (Float) -> Unit, onStop: () -> Unit, onToggle: () -> Unit) {
+    val c = Mpx.colors
+    val a = if (expanded) "▼" else "▲"
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(20.dp)
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { onDrag(it) },
+                onDragStopped = { onStop() },
+            )
+            .tap(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        Txt("$a ════════════ $a", size = 10.sp, color = c.dim, letterSpacing = 2.sp)
+    }
+}
+
+/** VOLUME "em pé": barra vertical fixada na direita, usada quando o console está expandido. */
+@Composable
+private fun VerticalVolume(volume: VolumeState, onSet: (Float) -> Unit, onMute: () -> Unit, modifier: Modifier) {
+    val c = Mpx.colors
+    val lit = if (volume.muted || volume.max == 0) 0 else (volume.level * 20f / volume.max).roundToInt()
+    Column(modifier.background(c.bg).frame(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Txt(
+            if (volume.muted) "MUT" else "%03d".format(lit * 5),
+            Modifier.padding(vertical = 4.dp), size = 13.sp, display = true,
+        )
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 7.dp, vertical = 6.dp)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val d = awaitFirstDown()
+                        onSet(((1f - d.position.y / size.height) * 20f).roundToInt().coerceIn(0, 20) / 20f)
+                        while (true) {
+                            val p = awaitPointerEvent().changes.firstOrNull() ?: break
+                            if (!p.pressed) break
+                            onSet(((1f - p.position.y / size.height) * 20f).roundToInt().coerceIn(0, 20) / 20f)
+                            p.consume()
+                        }
+                    }
+                },
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            repeat(20) { i ->
+                Box(Modifier.fillMaxWidth().weight(1f).background(if ((19 - i) < lit) c.accent else c.segOff))
+            }
+        }
+        IconButton(
+            if (volume.muted) MpxIcons.Muted else MpxIcons.Volume,
+            Modifier.fillMaxWidth().height(40.dp), border = c.bg, iconSize = 20.dp, onClick = onMute,
+        )
+    }
+}
+
 private val SPECTRUM_BASE = intArrayOf(38, 62, 80, 55, 90, 72, 48, 66, 85, 58, 40, 70, 92, 64, 50, 76, 60, 44, 68, 82, 56, 36, 52, 46, 30, 42, 26, 18)
 
 @Composable
@@ -326,11 +451,20 @@ private fun Spectrum(playing: Boolean) {
 }
 
 @Composable
-private fun Console(modifier: Modifier, ui: PlayerUi, tech: TechInfo, lyrics: List<LyricLine>, onEmpty: () -> Unit) {
+private fun Console(
+    modifier: Modifier,
+    ui: PlayerUi,
+    tech: TechInfo,
+    lyrics: List<LyricLine>,
+    onEmpty: () -> Unit,
+    contentEndPadding: Dp = 0.dp,
+    topBar: (@Composable () -> Unit)? = null,
+) {
     val c = Mpx.colors
     var lyricMode by rememberSaveable { mutableStateOf(false) }
     val curIdx = lyrics.indexOfLast { it.timeMs <= ui.positionMs }
-    Column(modifier.fillMaxWidth().frame()) {
+    Column(modifier.fillMaxWidth().background(c.bg).frame()) {
+        topBar?.invoke()
         Row(Modifier.fillMaxWidth().height(30.dp), verticalAlignment = Alignment.CenterVertically) {
             ConsoleTab(">_ CMD.LOG", !lyricMode) { lyricMode = false }
             ConsoleTab("♪ LYRICS.LRC", lyricMode) { lyricMode = true }
@@ -341,7 +475,7 @@ private fun Console(modifier: Modifier, ui: PlayerUi, tech: TechInfo, lyrics: Li
             )
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
-        Box(Modifier.fillMaxSize().clipToBounds().padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Box(Modifier.fillMaxSize().clipToBounds().padding(start = 10.dp, end = 10.dp + contentEndPadding, top = 6.dp, bottom = 6.dp)) {
             if (!lyricMode) CmdLog(ui, tech, onEmpty) else LyricsView(lyrics, curIdx, ui.positionMs, ui.isPlaying)
         }
     }

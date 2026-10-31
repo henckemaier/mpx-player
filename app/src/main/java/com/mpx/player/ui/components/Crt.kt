@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mpx.player.BuildConfig
 import com.mpx.player.ui.theme.Mpx
 import kotlinx.coroutines.delay
 
@@ -129,7 +130,7 @@ fun MpxHeader(right: @Composable RowScope.() -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Txt("MPX//OS (TM) v1.03", size = 11.sp, color = c.dim, letterSpacing = 1.sp)
+        Txt("MPX//OS (TM) v${BuildConfig.VERSION_NAME}", size = 11.sp, color = c.dim, letterSpacing = 1.sp)
         right()
     }
 }

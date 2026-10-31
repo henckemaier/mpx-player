@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mpx.player.BuildConfig
 import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.Panel
 import com.mpx.player.ui.components.SegmentBar
@@ -94,7 +95,7 @@ private fun BootHeader() {
         Modifier.fillMaxWidth().frame().padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        HeaderLabel("MPX BIOS (TM)"); HeaderLabel("RESEARCH"); HeaderLabel("VER 1.03")
+        HeaderLabel("MPX BIOS (TM)"); HeaderLabel("RESEARCH"); HeaderLabel("VER ${BuildConfig.VERSION_NAME}")
     }
 }
 
@@ -134,7 +135,7 @@ private fun BootLog(
                 "> INDEX ${"%,d".format(fileCount).replace(',', '.')} FILES" to if (scanned) "[ OK ]" else "[....]",
                 "> LOAD CODEC mp3/flac" to "[ OK ]",
                 "> EQ PRESET ${eqPreset.lowercase()}" to "[ OK ]",
-                "> NET SYNC" to "[SKIP]",
+                "> INTERNET CONNECTION" to "[NOPE]",
             )
             lines.take(step.coerceAtLeast(1)).forEachIndexed { i, (l, r) ->
                 val muted = i == 5 || (i == 1 && !hasPermission)

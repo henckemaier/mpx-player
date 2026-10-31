@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mpx.player.BuildConfig
 import com.mpx.player.data.DownloadState
 import com.mpx.player.data.DownloadStatus
 import com.mpx.player.data.UpdateState
@@ -232,7 +233,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
                     "APP" to "MPX//PLAYER",
-                    "VERSÃO" to "1.5.0 (BUILD 2026.10)",
+                    "VERSÃO" to "${BuildConfig.VERSION_NAME} (BUILD 2026.10)",
                     "ENGINE" to "MPX AUDIO CORE · MEDIA3",
                     "LICENÇAS" to "OFL (VT323, JETBRAINS MONO)",
                     "AUTOR" to "[SEU NOME]",
