@@ -16,12 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
 enum class DownloadStatus { IDLE, INIT, DOWNLOADING, PUBLISHING, DONE, ERROR, CANCELED }
 
@@ -255,58 +250,13 @@ class Downloader(
 
     /** Salva `<base>.lrc` (base = nome do arquivo sem extensão, lowercase) se o LRCLIB tiver letra sincronizada. */
     private fun fetchAndStoreLyrics(file: File, meta: Tags): Boolean {
-        val synced = runCatching { fetchSyncedLyrics(meta) }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
+        val synced = runCatching { lyrics.fetchSynced(meta.title, meta.artist, meta.album, meta.durationSec.toLong()) }
+            .getOrNull()?.takeIf { it.isNotBlank() } ?: return false
         return runCatching {
             File(lyricsDir, file.nameWithoutExtension.lowercase() + ".lrc").writeText(synced)
             true
         }.getOrDefault(false)
     }
-
-    private fun fetchSyncedLyrics(meta: Tags): String? {
-        val artist = meta.artist ?: ""
-        // 1) correspondência exata (tolerância de ±2s no LRCLIB)
-        getJson(
-            "https://lrclib.net/api/get?" + query(
-                "track_name" to meta.title,
-                "artist_name" to artist,
-                "album_name" to (meta.album ?: ""),
-                "duration" to meta.durationSec.toString(),
-            ),
-        )?.let { obj -> synced(obj)?.let { return it } }
-        // 2) busca por título/artista
-        getJsonArray("https://lrclib.net/api/search?" + query("track_name" to meta.title, "artist_name" to artist))
-            ?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    synced(arr.optJSONObject(i) ?: continue)?.let { return it }
-                }
-            }
-        return null
-    }
-
-    private fun synced(obj: JSONObject): String? =
-        obj.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" }
-
-    private fun query(vararg params: Pair<String, String>): String =
-        params.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, "UTF-8") }
-
-    private fun getJson(url: String): JSONObject? = httpGet(url)?.let { runCatching { JSONObject(it) }.getOrNull() }
-    private fun getJsonArray(url: String): JSONArray? = httpGet(url)?.let { runCatching { JSONArray(it) }.getOrNull() }
-
-    private fun httpGet(url: String): String? = runCatching {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
-            setRequestProperty("User-Agent", "MPX-Player/1.03 (https://github.com/mpx-player)")
-            setRequestProperty("Accept", "application/json")
-        }
-        try {
-            if (conn.responseCode != 200) return null
-            conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()
 
     /**
      * True se a biblioteca já tem a mesma música — por título + artista + duração (±2s), em

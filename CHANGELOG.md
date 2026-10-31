@@ -5,6 +5,27 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-31
+
+### Adicionado
+- **Buscar letras faltantes** (CFG → IMPORTAR): baixa a letra sincronizada das músicas que estão
+  sem, **sem rebaixar o áudio**, com barra de progresso e cancelamento. Recupera letras que não
+  vieram no download.
+- **NetEase** como segunda fonte de letra, usada quando o LRCLIB não tem a música.
+- **Painel de letras puxável** no Now Playing (retrato): uma alça puxa o CMD.LOG/LYRICS para cima,
+  cobrindo o espectro e o volume; o volume vira uma barra vertical na direita (toque na alça alterna).
+
+### Alterado
+- **Now Playing em paisagem** reorganizado: espectro na coluna esquerda (abaixo do nome) e o console
+  de letras/log ocupando mais espaço à direita.
+- A **versão exibida** (tela de boot, topo do CFG e SOBRE) agora acompanha automaticamente a versão
+  do app.
+- Tela de boot: "NET SYNC [SKIP]" passou a "INTERNET CONNECTION [NOPE]".
+
+### Corrigido
+- No Now Playing, com o painel de letras **expandido** a letra ocupava só a metade de baixo; agora
+  preenche a altura disponível, com a linha atual no rodapé.
+
 ## [1.5.0] - 2026-10-30
 
 ### Adicionado
@@ -49,6 +70,7 @@ Versão base — primeira no GitHub.
 - Player base: biblioteca via MediaStore, fila, **equalizador 10 bandas**, temas/fósforos, estética
   CRT (scanlines, glow, ASCII/dither nas capas), letras no Now Playing com quebra de linha.
 
-[Unreleased]: https://github.com/henckemaier/mpx-player/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/henckemaier/mpx-player/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/henckemaier/mpx-player/releases/tag/v1.6.0
 [1.5.0]: https://github.com/henckemaier/mpx-player/releases/tag/v1.5.0
 [1.04]: https://github.com/henckemaier/mpx-player/releases/tag/v1.04

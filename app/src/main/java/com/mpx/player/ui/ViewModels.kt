@@ -339,6 +339,15 @@ data class SettingsUi(
     val message: String? = null,
 )
 
+/** Progresso da busca de letras faltantes no LRCLIB. */
+data class LyricsSyncUi(
+    val running: Boolean = false,
+    val done: Int = 0,
+    val total: Int = 0,
+    val found: Int = 0,
+    val result: String? = null,
+)
+
 class SettingsViewModel(private val app: AppContainer) : ViewModel() {
     private val lrcCount = MutableStateFlow(0)
     private val message = MutableStateFlow<String?>(null)
@@ -399,6 +408,35 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
     fun cancelDownload() = app.downloader.cancel()
     fun updateYtDlp() = run { app.downloader.updateEngine() }
     fun clearDownload() = app.downloader.reset()
+
+    // ---- Sincronizar letras faltantes (LRCLIB), sem rebaixar o áudio
+    private val _lyricsSync = MutableStateFlow(LyricsSyncUi())
+    val lyricsSync: StateFlow<LyricsSyncUi> = _lyricsSync
+    private var lyricsJob: kotlinx.coroutines.Job? = null
+
+    fun syncLyrics() {
+        if (_lyricsSync.value.running) return
+        lyricsJob = viewModelScope.launch {
+            val tracks = app.library.state.value.tracks
+            if (tracks.isEmpty()) {
+                _lyricsSync.value = LyricsSyncUi(result = "BIBLIOTECA VAZIA · ESCANEIE PRIMEIRO")
+                return@launch
+            }
+            _lyricsSync.value = LyricsSyncUi(running = true, total = tracks.size)
+            try {
+                val found = app.lyrics.syncMissing(tracks) { done, total, f ->
+                    _lyricsSync.value = _lyricsSync.value.copy(done = done, total = total, found = f)
+                }
+                _lyricsSync.value = LyricsSyncUi(total = tracks.size, found = found, result = "OK: $found LETRAS BAIXADAS")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _lyricsSync.value = _lyricsSync.value.copy(running = false, result = "CANCELADO · ${_lyricsSync.value.found} BAIXADAS")
+                throw e
+            }
+        }
+    }
+
+    fun cancelLyricsSync() { lyricsJob?.cancel() }
+    fun clearLyricsSync() { _lyricsSync.value = LyricsSyncUi() }
 
     // ---- Auto-update do app (GitHub Releases)
     val update = app.updater.state

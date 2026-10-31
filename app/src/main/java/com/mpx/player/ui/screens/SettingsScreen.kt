@@ -49,11 +49,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mpx.player.BuildConfig
 import com.mpx.player.data.DownloadState
 import com.mpx.player.data.DownloadStatus
 import com.mpx.player.data.UpdateState
 import com.mpx.player.data.UpdateStatus
 import com.mpx.player.model.UserSettings
+import com.mpx.player.ui.LyricsSyncUi
 import com.mpx.player.ui.SettingsUi
 import com.mpx.player.ui.SettingsViewModel
 import com.mpx.player.ui.components.DashedDivider
@@ -81,6 +83,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
     val s = ui.settings
     val context = LocalContext.current
     val dl by vm.download.collectAsStateWithLifecycle()
+    val lrcSync by vm.lyricsSync.collectAsStateWithLifecycle()
     val up by vm.update.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableIntStateOf(0) }
 
@@ -195,6 +198,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
                 "> LETRAS .LRC",
                 if (s.lrcTreeUri == null) "SINCRONIZAR COM A PASTA" else "${ui.lrcCount} .LRC · ${Uri.parse(s.lrcTreeUri).lastPathSegment?.substringAfter(':')?.uppercase()}",
             ) { pickLrcFolder.launch(null) }
+            LyricsSyncBody(lrcSync, onStart = vm::syncLyrics, onCancel = vm::cancelLyricsSync, onClear = vm::clearLyricsSync)
             ToggleRow("CONVERTER CAPAS P/ MONO", s.monoCovers, if (s.monoCovers) "DITHER 1-BIT" else "ORIGINAL", { vm.toggleMono(s) }, minHeight = 52.dp)
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (ui.scanning) {
@@ -232,7 +236,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(
                     "APP" to "MPX//PLAYER",
-                    "VERSÃO" to "1.5.0 (BUILD 2026.10)",
+                    "VERSÃO" to "${BuildConfig.VERSION_NAME} (BUILD 2026.10)",
                     "ENGINE" to "MPX AUDIO CORE · MEDIA3",
                     "LICENÇAS" to "OFL (VT323, JETBRAINS MONO)",
                     "AUTOR" to "[SEU NOME]",
@@ -402,6 +406,24 @@ private fun DownloadBody(
     Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Txt("LETRA VIA LRCLIB · CAPA FILTRADA NO ESTILO DO APP", size = 10.sp, color = c.dim, maxLines = 2)
         Txt("RESPEITE OS TERMOS DE USO E OS DIREITOS AUTORAIS", size = 10.sp, color = c.dim, maxLines = 2)
+    }
+}
+
+/** Busca letras faltantes no LRCLIB para a biblioteca inteira, com progresso e cancelamento. */
+@Composable
+private fun LyricsSyncBody(st: LyricsSyncUi, onStart: () -> Unit, onCancel: () -> Unit, onClear: () -> Unit) {
+    val c = Mpx.colors
+    Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Txt("BUSCAR LETRAS FALTANTES NO LRCLIB (SEM REBAIXAR O ÁUDIO)", size = 10.sp, color = c.dim, maxLines = 2)
+        if (st.running) {
+            val lit = if (st.total > 0) (st.done * 20 / st.total).coerceIn(0, 20) else 0
+            SegmentBar(20, lit, height = 20.dp)
+            Txt("BUSCANDO ${st.done}/${st.total} · ${st.found} ACHADAS", size = 12.sp)
+            TextButton("CANCELAR", Modifier.fillMaxWidth().height(44.dp), border = c.accent, onClick = onCancel)
+        } else {
+            TextButton("> BUSCAR LETRAS FALTANTES", Modifier.fillMaxWidth().height(44.dp), filled = true, onClick = onStart)
+            st.result?.let { ResultRow(it, onClear) }
+        }
     }
 }
 
