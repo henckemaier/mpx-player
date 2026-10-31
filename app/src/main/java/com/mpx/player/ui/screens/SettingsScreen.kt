@@ -239,7 +239,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
                     "VERSÃO" to "${BuildConfig.VERSION_NAME} (BUILD 2026.10)",
                     "ENGINE" to "MPX AUDIO CORE · MEDIA3",
                     "LICENÇAS" to "OFL (VT323, JETBRAINS MONO)",
-                    "AUTOR" to "[SEU NOME]",
+                    "AUTOR" to "Henckemaier",
                 ).forEach { (k, v) ->
                     Row {
                         Txt(k, Modifier.width(96.dp), size = 11.sp, color = c.dim)
