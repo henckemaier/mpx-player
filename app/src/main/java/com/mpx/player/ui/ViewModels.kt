@@ -1,8 +1,11 @@
 package com.mpx.player.ui
 
+import android.app.RecoverableSecurityException
+import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -13,11 +16,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mpx.player.AppContainer
 import com.mpx.player.MpxApp
 import com.mpx.player.data.LibraryState
+import com.mpx.player.data.PlaylistLogic
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
 import com.mpx.player.model.EqPresets
 import com.mpx.player.model.EqSettings
 import com.mpx.player.model.LyricLine
+import com.mpx.player.model.Playlist
 import com.mpx.player.model.Track
 import com.mpx.player.model.UserSettings
 import com.mpx.player.playback.PlayerState
@@ -26,8 +31,11 @@ import com.mpx.player.playback.VolumeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -89,7 +97,11 @@ class PlayerViewModel(private val app: AppContainer) : ViewModel() {
 
     private val currentTrack = ui.map { it.current }.distinctUntilChanged { a, b -> a?.id == b?.id }
 
-    val lyrics: StateFlow<List<LyricLine>> = combine(currentTrack, app.settings.settings.map { it.lrcTreeUri }.distinctUntilChanged()) { t, tree -> t to tree }
+    val lyrics: StateFlow<List<LyricLine>> = combine(
+        currentTrack,
+        app.settings.settings.map { it.lrcTreeUri }.distinctUntilChanged(),
+        app.lyrics.version,
+    ) { t, tree, _ -> t to tree }
         .flatMapLatest { (t, tree) -> if (t == null) flowOf(emptyList()) else flow { emit(app.lyrics.load(t, tree)) } }
         .state(this, emptyList())
 
@@ -143,11 +155,31 @@ class PlayerViewModel(private val app: AppContainer) : ViewModel() {
     fun shuffleQueue() = player.shuffleQueue()
     fun clearQueue() = player.clearQueue()
     fun play() = player.play()
+
+    // ---- favoritos / playlists (botão de marcador no Now Playing)
+    val favorite: StateFlow<Boolean> = combine(currentTrack, app.playlists.playlists) { t, pls ->
+        t != null && PlaylistLogic.isFavorite(pls, t.key)
+    }.state(this, false)
+
+    val playlists: StateFlow<List<Playlist>> = app.playlists.playlists
+
+    fun toggleFavorite() { ui.value.current?.let { app.playlists.toggleFavorite(it.key) } }
+    fun addCurrentToPlaylist(id: String) { ui.value.current?.let { app.playlists.addTrack(id, it.key) } }
 }
 
 // ============================================================ BIBLIOTECA
 
-enum class LibFilter { ALBUNS, ARTISTAS, FAIXAS }
+enum class LibFilter { PLAYLISTS, ALBUNS, ARTISTAS, FAIXAS }
+
+data class PlaylistUi(val id: String, val name: String, val photo: String?, val count: Int, val locked: Boolean)
+
+data class OpenedPlaylist(
+    val id: String,
+    val name: String,
+    val photo: String?,
+    val locked: Boolean,
+    val tracks: List<Track>,
+)
 
 data class LibraryUi(
     val filter: LibFilter = LibFilter.ALBUNS,
@@ -158,30 +190,118 @@ data class LibraryUi(
     val tracks: List<Track> = emptyList(),
     val totalFiles: Int = 0,
     val scanned: Boolean = false,
+    val playlists: List<PlaylistUi> = emptyList(),
+    val opened: OpenedPlaylist? = null,
+    val favoriteKeys: Set<String> = emptySet(),
 )
 
 class LibraryViewModel(private val app: AppContainer) : ViewModel() {
     private val filter = MutableStateFlow(LibFilter.ALBUNS)
     private val query = MutableStateFlow("")
     private val ascending = MutableStateFlow(true)
+    private val openedId = MutableStateFlow<String?>(null)
 
-    val ui: StateFlow<LibraryUi> = combine(app.library.state, filter, query, ascending) { lib, f, q, asc ->
+    private data class Inputs(val lib: LibraryState, val f: LibFilter, val q: String, val asc: Boolean)
+
+    val ui: StateFlow<LibraryUi> = combine(
+        combine(app.library.state, filter, query, ascending) { lib, f, q, asc -> Inputs(lib, f, q, asc) },
+        app.playlists.playlists,
+        openedId,
+    ) { inp, pls, opened ->
+        val (lib, f, q, asc) = inp
         val needle = q.trim().lowercase()
         fun ok(vararg s: String) = needle.isEmpty() || s.any { it.lowercase().contains(needle) }
         val albums = lib.albums.filter { ok(it.title, it.artist) }.let { if (asc) it else it.reversed() }
         val artists = lib.artists.filter { ok(it.name) }.let { if (asc) it else it.reversed() }
         val tracks = lib.tracks.filter { ok(it.title, it.artist, it.album, it.displayName) }
             .sortedBy { it.title.uppercase() }.let { if (asc) it else it.reversed() }
-        LibraryUi(f, q, asc, albums, artists, tracks, lib.tracks.size, lib.scanned)
+        val playlistUis = pls.map { PlaylistUi(it.id, it.name, it.photo, it.trackKeys.size, it.locked) }
+        val openedPl = opened?.let { id ->
+            pls.firstOrNull { it.id == id }?.let { p ->
+                OpenedPlaylist(p.id, p.name, p.photo, p.locked, lib.tracksForKeys(p.trackKeys))
+            }
+        }
+        val favKeys = pls.firstOrNull { it.id == Playlist.FAVORITES_ID }?.trackKeys?.toSet() ?: emptySet()
+        LibraryUi(f, q, asc, albums, artists, tracks, lib.tracks.size, lib.scanned, playlistUis, openedPl, favKeys)
     }.state(this, LibraryUi())
 
-    fun setFilter(f: LibFilter) { filter.value = f }
+    fun setFilter(f: LibFilter) {
+        filter.value = f
+        if (f != LibFilter.PLAYLISTS) openedId.value = null
+    }
     fun setQuery(q: String) { query.value = q }
     fun toggleSort() = ascending.update { !it }
 
     fun playAlbum(a: Album) = app.player.play(a.tracks, 0, a.title)
     fun playArtist(a: Artist) = app.player.play(a.tracks, 0, a.name)
     fun playTrack(list: List<Track>, i: Int) = app.player.play(list, i, "/all_tracks")
+
+    // ---- playlists
+    fun createPlaylist(name: String, photo: Uri?) = viewModelScope.launch {
+        app.playlists.create(name, photo?.let { app.overrides.savePlaylistPhoto(it) })
+    }
+    fun renamePlaylist(id: String, name: String) = app.playlists.rename(id, name)
+    fun deletePlaylist(id: String) {
+        app.playlists.delete(id)
+        if (openedId.value == id) openedId.value = null
+    }
+    fun setPlaylistPhoto(id: String, photo: Uri) = viewModelScope.launch {
+        app.playlists.setPhoto(id, app.overrides.savePlaylistPhoto(photo))
+    }
+    fun openPlaylist(id: String) { openedId.value = id }
+    fun closePlaylist() { openedId.value = null }
+    fun playPlaylist(id: String) {
+        val p = app.playlists.playlists.value.firstOrNull { it.id == id } ?: return
+        val tracks = app.library.state.value.tracksForKeys(p.trackKeys)
+        if (tracks.isNotEmpty()) app.player.play(tracks, 0, "/" + p.name.lowercase())
+    }
+    fun addToPlaylist(playlistId: String, key: String) = app.playlists.addTrack(playlistId, key)
+    fun removeFromPlaylist(playlistId: String, key: String) = app.playlists.removeTrack(playlistId, key)
+    fun toggleFavorite(key: String) = app.playlists.toggleFavorite(key)
+
+    // ---- editar faixa (overrides só do MPX)
+    fun editTitle(key: String, title: String?) = app.overrides.setTitle(key, title)
+    fun editCover(key: String, photo: Uri) = viewModelScope.launch { app.overrides.setCover(key, photo) }
+    fun clearCover(key: String) = app.overrides.clearCover(key)
+    fun editLyrics(track: Track, text: String) = viewModelScope.launch {
+        app.lyrics.save(track, text)
+        app.lyrics.invalidate()
+    }
+
+    // ---- excluir faixa (apaga o arquivo; UI lança o IntentSender)
+    private val _deleteRequests = MutableSharedFlow<IntentSender>(extraBufferCapacity = 1)
+    val deleteRequests: SharedFlow<IntentSender> = _deleteRequests.asSharedFlow()
+    private var pendingDeleteKey: String? = null
+
+    fun requestDeleteTrack(track: Track) {
+        pendingDeleteKey = track.key
+        viewModelScope.launch(Dispatchers.IO) {
+            val resolver = app.context.contentResolver
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                runCatching { MediaStore.createDeleteRequest(resolver, listOf(track.uri)).intentSender }
+                    .onSuccess { _deleteRequests.emit(it) }
+                    .onFailure { cancelDelete() }
+            } else {
+                try {
+                    resolver.delete(track.uri, null, null)
+                    onDeleteConfirmed()
+                } catch (e: RecoverableSecurityException) {
+                    _deleteRequests.emit(e.userAction.actionIntent.intentSender)
+                } catch (_: Exception) {
+                    cancelDelete()
+                }
+            }
+        }
+    }
+
+    fun onDeleteConfirmed() {
+        val key = pendingDeleteKey ?: return
+        pendingDeleteKey = null
+        app.playlists.purgeKey(key)
+        app.library.rescan()
+    }
+
+    fun cancelDelete() { pendingDeleteKey = null }
 }
 
 // ============================================================ EQ
@@ -260,7 +380,7 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
     }
 
     fun importPlaylist(uri: Uri) = run {
-        val pl = app.playlists.import(uri, app.library.state.value.tracks)
+        val pl = app.playlistImporter.import(uri, app.library.state.value.tracks)
         if (pl.tracks.isEmpty()) {
             message.value = "ERRO: NENHUMA FAIXA ENCONTRADA EM ${pl.name.uppercase()}"
         } else {

@@ -18,3 +18,7 @@
 # Referências que não fazem parte do build do app
 /playlist downloader/
 *conceito.html
+
+# Testes (não versionados — pedido do usuário)
+/app/src/test/
+/app/src/androidTest/

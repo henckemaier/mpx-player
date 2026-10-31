@@ -7,11 +7,15 @@ import android.provider.MediaStore
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
 import com.mpx.player.model.Track
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class LibraryState(
@@ -24,18 +28,53 @@ data class LibraryState(
 ) {
     private val byId: Map<Long, Track> by lazy { tracks.associateBy { it.id } }
     fun track(id: Long): Track? = byId[id]
+
+    private val byKey: Map<String, Track> by lazy { tracks.associateBy { it.key } }
+    fun trackByKey(key: String): Track? = byKey[key]
+    fun tracksForKeys(keys: List<String>): List<Track> = keys.mapNotNull { byKey[it] }
 }
 
-class LibraryRepository(private val context: Context) {
+class LibraryRepository(
+    private val context: Context,
+    private val overrides: OverrideRepository,
+) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private var rawTracks: List<Track> = emptyList()
+    private var scanned = false
+    private var newCount = 0
+    @Volatile private var scanningFlag = false
 
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
+    init {
+        // Re-aplica os overrides (título/capa) sem re-consultar o MediaStore quando eles mudam.
+        scope.launch { overrides.overrides.drop(1).collect { rebuild() } }
+    }
+
     suspend fun scan() {
-        if (_state.value.scanning) return
+        if (scanningFlag) return
+        scanningFlag = true
         _state.update { it.copy(scanning = true) }
-        val previous = _state.value.tracks.map { it.id }.toSet()
-        val tracks = withContext(Dispatchers.IO) { query() }
+        val previous = rawTracks.map { it.id }.toSet()
+        rawTracks = withContext(Dispatchers.IO) { query() }
+        scanned = true
+        newCount = if (previous.isEmpty()) 0 else rawTracks.count { it.id !in previous }
+        scanningFlag = false
+        rebuild()
+    }
+
+    /** Re-escaneia no escopo do repositório (sobrevive à troca de tela/aba). */
+    fun rescan() = scope.launch { scan() }
+
+    @Synchronized
+    private fun rebuild() {
+        val ov = overrides.overrides.value
+        val tracks = if (ov.isEmpty()) rawTracks else rawTracks.map { t ->
+            val o = ov[t.key] ?: return@map t
+            t.copy(title = o.title ?: t.title, coverOverride = o.cover ?: t.coverOverride)
+        }
         val albums = tracks.groupBy { it.albumId }.map { (id, list) ->
             Album(
                 id = id,
@@ -47,8 +86,7 @@ class LibraryRepository(private val context: Context) {
         val artists = tracks.groupBy { it.artist }.map { (name, list) ->
             Artist(name, list.sortedWith(compareBy({ it.album }, { it.trackNumber })))
         }.sortedBy { it.name.uppercase() }
-        val newCount = if (previous.isEmpty()) 0 else tracks.count { it.id !in previous }
-        _state.value = LibraryState(tracks, albums, artists, scanning = false, scanned = true, newSinceLastScan = newCount)
+        _state.value = LibraryState(tracks, albums, artists, scanning = scanningFlag, scanned = scanned, newSinceLastScan = newCount)
     }
 
     private fun query(): List<Track> {

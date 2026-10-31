@@ -1,8 +1,11 @@
 package com.mpx.player.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -32,13 +35,17 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.mpx.player.model.LyricLine
+import com.mpx.player.model.Playlist
 import com.mpx.player.playback.RepeatMode
 import com.mpx.player.playback.VolumeState
 import com.mpx.player.ui.PlayerUi
@@ -48,6 +55,7 @@ import com.mpx.player.ui.components.IconButton
 import com.mpx.player.ui.components.InvertedBar
 import com.mpx.player.ui.components.MpxIcons
 import com.mpx.player.ui.components.SegmentBar
+import com.mpx.player.ui.components.TextButton
 import com.mpx.player.ui.components.Txt
 import com.mpx.player.ui.components.blinkingCursor
 import com.mpx.player.ui.components.formatTime
@@ -67,6 +75,8 @@ data class NowPlayingActions(
     val setVolume: (Float) -> Unit,
     val mute: () -> Unit,
     val openLibrary: () -> Unit,
+    val toggleFavorite: () -> Unit,
+    val addToPlaylist: (String) -> Unit,
 )
 
 @Composable
@@ -75,8 +85,11 @@ fun NowPlayingScreen(
     tech: TechInfo,
     lyrics: List<LyricLine>,
     volume: VolumeState,
+    favorite: Boolean,
+    playlists: List<Playlist>,
     actions: NowPlayingActions,
 ) {
+    var showPicker by remember { mutableStateOf(false) }
     if (Mpx.landscape) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(0.44f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -86,7 +99,7 @@ fun NowPlayingScreen(
             }
             Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NpProgress(ui, actions)
-                NpTransport(ui, actions)
+                NpTransport(ui, actions, favorite) { showPicker = true }
                 VolumeRow(volume, actions.setVolume, actions.mute)
                 Spectrum(ui.isPlaying)
                 Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
@@ -98,11 +111,18 @@ fun NowPlayingScreen(
             NpCoverMeta(ui, tech)
             NpTitle(ui)
             NpProgress(ui, actions)
-            NpTransport(ui, actions)
+            NpTransport(ui, actions, favorite) { showPicker = true }
             VolumeRow(volume, actions.setVolume, actions.mute)
             Spectrum(ui.isPlaying)
             Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
         }
+    }
+    if (showPicker) {
+        PlaylistPickerDialog(
+            playlists,
+            onPick = { actions.addToPlaylist(it); showPicker = false },
+            onDismiss = { showPicker = false },
+        )
     }
 }
 
@@ -164,7 +184,7 @@ private fun NpProgress(ui: PlayerUi, actions: NowPlayingActions) {
 }
 
 @Composable
-private fun NpTransport(ui: PlayerUi, actions: NowPlayingActions) {
+private fun NpTransport(ui: PlayerUi, actions: NowPlayingActions, favorite: Boolean, onLongFavorite: () -> Unit) {
     val c = Mpx.colors
     Row(Modifier.fillMaxWidth().height(50.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         val m = Modifier.weight(1f).fillMaxHeight()
@@ -180,6 +200,50 @@ private fun NpTransport(ui: PlayerUi, actions: NowPlayingActions) {
             border = if (ui.repeat != RepeatMode.OFF) c.accent else c.line,
             tint = if (ui.repeat != RepeatMode.OFF) c.accent else c.dim, iconSize = 22.dp, onClick = actions.repeat,
         )
+        BookmarkButton(favorite, m, onTap = actions.toggleFavorite, onLong = onLongFavorite)
+    }
+}
+
+/** Botão de marcador: toque = favoritar; toque longo = escolher playlist. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BookmarkButton(favorite: Boolean, modifier: Modifier, onTap: () -> Unit, onLong: () -> Unit) {
+    val c = Mpx.colors
+    Box(
+        modifier
+            .background(if (favorite) c.accent else c.bg)
+            .frame(if (favorite) c.accent else c.line)
+            .combinedClickable(onClick = onTap, onLongClick = onLong),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            if (favorite) MpxIcons.BookmarkOn else MpxIcons.Bookmark, null,
+            Modifier.size(22.dp),
+            colorFilter = ColorFilter.tint(if (favorite) c.onAccent else c.accent),
+        )
+    }
+}
+
+@Composable
+private fun PlaylistPickerDialog(playlists: List<Playlist>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val c = Mpx.colors
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties()) {
+        Column(
+            Modifier.fillMaxWidth().background(c.bg).frame(c.accent).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Txt("> ADICIONAR A PLAYLIST", size = 12.sp, color = c.dim)
+            Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                playlists.forEach { p ->
+                    Txt(
+                        "  " + (if (p.locked) "♥ " else "") + p.name.uppercase(),
+                        Modifier.fillMaxWidth().height(40.dp).tap { onPick(p.id) }.padding(vertical = 11.dp),
+                        size = 13.sp,
+                    )
+                }
+            }
+            TextButton("CANCELAR", Modifier.fillMaxWidth().height(40.dp), onClick = onDismiss)
+        }
     }
 }
 

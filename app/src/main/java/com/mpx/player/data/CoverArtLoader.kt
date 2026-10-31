@@ -10,6 +10,7 @@ import android.util.LruCache
 import android.util.Size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Capa já processada, pronta para desenhar. */
 sealed interface CoverArt {
@@ -34,14 +35,41 @@ class CoverArtLoader(private val context: Context) {
             val key = "$albumId/$style/$mono/$accent/$bg"
             processed.get(key)?.let { return@withContext it }
             val src = rawBitmap(albumId, trackUri) ?: return@withContext null
-            val art = when (style) {
-                2 -> CoverArt.Ascii(ascii(src, 26))
-                else -> if (mono) CoverArt.Image(dither(src, 96, accent, bg), pixelated = true)
-                else CoverArt.Image(src, pixelated = false)
-            }
-            processed.put(key, art)
-            art
+            process(src, key, style, mono, accent, bg)
         }
+
+    /** Carrega uma imagem de arquivo (foto de playlist / capa personalizada) com o mesmo filtro. */
+    suspend fun loadFile(file: File, style: Int, mono: Boolean, accent: Int, bg: Int): CoverArt? =
+        withContext(Dispatchers.Default) {
+            val key = "file:${file.path}:${file.lastModified()}/$style/$mono/$accent/$bg"
+            processed.get(key)?.let { return@withContext it }
+            val src = fileBitmap(file) ?: return@withContext null
+            process(src, key, style, mono, accent, bg)
+        }
+
+    private fun process(src: Bitmap, key: String, style: Int, mono: Boolean, accent: Int, bg: Int): CoverArt {
+        val art = when (style) {
+            2 -> CoverArt.Ascii(ascii(src, 26))
+            else -> if (mono) CoverArt.Image(dither(src, 96, accent, bg), pixelated = true)
+            else CoverArt.Image(src, pixelated = false)
+        }
+        processed.put(key, art)
+        return art
+    }
+
+    private val files = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
+    private fun fileBitmap(file: File): Bitmap? {
+        if (!file.isFile) return null
+        files.get(file.path)?.let { return it }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        val minSide = minOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
+        val opts = BitmapFactory.Options().apply { inSampleSize = Integer.highestOneBit((minSide / 320).coerceAtLeast(1)) }
+        return BitmapFactory.decodeFile(file.path, opts)?.also { files.put(file.path, it) }
+    }
 
     private suspend fun rawBitmap(albumId: Long, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
         raw.get(albumId)?.let { return@withContext it }
