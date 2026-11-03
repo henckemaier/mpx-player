@@ -70,9 +70,54 @@ Scaffold do KMP compilando, **sem quebrar o Android**:
 
 ## 5. Riscos
 
-- **Build iOS exige macOS + Xcode.** Kotlin/Native não gera binários Apple no Windows (máquina atual). Os alvos iOS estão declarados e o Android segue verde aqui, mas compilar/linkar/rodar o `iosApp` precisa de um Mac (ou CI macOS). **Maior bloqueio prático.**
-- **Downloader (yt-dlp):** `youtubedl-android` é NDK/Android. Sem equivalente no iOS (e políticas da App Store restringem esse tipo de recurso). Provável: recurso só-Android no início, ou repensar via backend.
+- **Build iOS exige macOS + Xcode.** Kotlin/Native não gera binários Apple no Windows (máquina atual). Os alvos iOS estão declarados e o Android segue verde aqui, mas compilar/linkar/rodar o `iosApp` precisa de um Mac (ou CI macOS). **Maior bloqueio prático.** → decisão em §6 (CI macOS).
+- **Downloader (yt-dlp):** `youtubedl-android` é NDK/Android. Sem equivalente no iOS e rejeitado pela App Store. → decisão em §6 (Android-only).
 - **Biblioteca de música:** modelos de acesso divergentes (MediaStore x MPMediaQuery/sandbox). Exige abstração de repositório bem desenhada.
 - **Compose Multiplatform no iOS** ainda amadurecendo; componentes CRT customizados precisam de validação visual no device.
 - **Equalizer/efeitos:** APIs e capacidades diferentes; paridade de som não é garantida.
 - **Esforço:** reescrever `playback/` e `data/` é o grosso do trabalho; a UI Compose é a parte mais reaproveitável.
+
+## 6. Decisões de risco
+
+Decididas antes de avançar a migração (aval do Maestro + parecer da Lente). Resumo: **CI macOS (A)** e **downloader Android-only (A)**.
+
+### Risco 1 — Build/validação iOS sem Mac+Xcode (máquina atual é Windows)
+
+**Opções avaliadas**
+
+| | Opção | O que resolve | Custo/esforço |
+|---|---|---|---|
+| A | **CI GitHub Actions `macos-latest`** compilando + testando o alvo iOS a cada push | Validação **automática** do lado Kotlin (`:shared` iOS: compile + `iosSimulatorArm64Test`) | Baixo. Minutos macOS **grátis enquanto o repo for público**; 10× em repo privado |
+| B | **Mac na nuvem** (EC2 mac / MacinCloud / MacStadium) | Rodar em simulador/device, `xcodebuild`, assinar `.ipa`, submeter à App Store | Médio/alto (hora ou mensalidade) |
+| C | **Adiar validação iOS** — só compilar common/android no Windows | Nada no iOS; `iosMain` fica sem verificação e apodrece | Zero, mas arriscado |
+
+**Decisão: A agora, B depois.** O CI macOS dá validação automática e barata do lado Kotlin a cada push (repo é público → sem custo). **B** entra só quando chegarmos a teste em device e submissão à App Store. **C** é o estado atual até o CI existir, mas é superado por A.
+
+**Até onde dá sem Mac local:** escrever e compilar **todo** `commonMain` + `androidMain`; com o CI (A), também compilar `iosMain` (incl. a futura impl AVFoundation) e rodar testes comuns/nativos no simulador. **Não** dá, sem Mac: rodar em iPhone/simulador interativo, `.ipa` assinado, submissão à App Store, e validação visual do Compose MP no iOS.
+
+**Caveats para o workflow (Lente), a aplicar quando o CI for criado:**
+- **Compilar no CI ≠ app iOS roda.** Linkar o framework prova só o Kotlin. O host `iosApp/` (SwiftUI) + render do Compose MP exigem `xcodebuild -sdk iphonesimulator` + boot de simulador. Planejar isso quando houver `iosApp/`, não parar no `linkDebugFramework`.
+- **`macos-latest` é Apple Silicon (arm64):** rodar testes em **`iosSimulatorArm64Test`** (não `iosX64`, que pediria Rosetta).
+- **Fixar a versão do Xcode** (ex.: `maxim-lobanov/setup-xcode`): Kotlin/Native 2.0.21 tem faixa suportada; o Xcode default do runner muda e quebra com erro críptico.
+- **Cache do Konan + Gradle** no CI (a dist do Kotlin/Native é grande; sem cache cada run baixa centenas de MB).
+- **Custo:** reavaliar se o repo deixar de ser público (macOS passa a cobrar 10×).
+- Casa com a **guarda de host** já aplicada (`:shared` registra alvos Apple só em macOS) → o loop no Windows segue verde enquanto o CI cuida do lado Apple.
+
+### Risco 2 — Downloader (yt-dlp / `youtubedl-android`) sem equivalente iOS
+
+**Contexto:** `youtubedl-android` empacota Python + yt-dlp + FFmpeg como libs nativas NDK — **Android-only**. Além de não haver equivalente viável no iOS, a **App Store rejeita** apps baixadores de YouTube (**Guideline 2.5.2** — código executável/intérprete embarcado — e ToS do YouTube).
+
+**Opções avaliadas**
+
+| | Opção | Veredito |
+|---|---|---|
+| A | **Android-only via `expect`/`actual`**; no iOS a feature é **ausente em tempo de compilação** | **Escolhida** |
+| B | **Backend/proxy** rodando yt-dlp | **Descartada:** você passa a *operar* a extração (exposição legal/DMCA **maior**), paga hosting, e a app **ainda** é rejeitada pela 2.5.2 se a capacidade aparecer |
+| C | Alternativa nativa iOS | Inexistente/viola ToS |
+| D | Remover no iOS | Na prática = A, mas A é a forma arquitetural limpa |
+
+**Decisão: A — downloader Android-only, atrás de uma fronteira `expect`/`actual` (ou interface "unsupported").** Pontos de implementação (Lente):
+- A 2.5.2 inspeciona a **capacidade no binário**: no iOS a lib NDK **não entra no build** (ótimo — não há o que "remover"). Garantir **ausência em tempo de compilação** (`actual` no-op/ausente + gate na navegação), **não** um toggle oculto com a capacidade ainda embarcada.
+- **`data/` e ViewModels comuns não podem depender direto do downloader**: manter atrás do `expect`/`actual` para o `commonMain` compilar no iOS sem a dependência NDK.
+- **Paridade:** iOS sai **sem download** — documentado; decisão de produto/PO.
+- Não altera a exposição já existente no Android (ToS do YouTube) — fora do escopo deste porte.
