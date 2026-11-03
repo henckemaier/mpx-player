@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MPX Player"
 include(":app")
+include(":shared")
