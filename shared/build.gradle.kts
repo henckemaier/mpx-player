@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.konan.target.HostManager
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -16,19 +17,23 @@ kotlin {
     }
 
     // ---- iOS ----
-    // Os alvos Apple só COMPILAM em macOS + Xcode (Kotlin/Native não gera binários
-    // Apple no Windows/Linux). Declará-los aqui não afeta :app:assembleDebug — as
-    // tasks nativas só rodam sob demanda (ex.: linkDebugFrameworkIosArm64 num Mac).
-    val xcf = org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFrameworkConfig(project, "Shared")
-    listOf(
-        iosX64(),
-        iosArm64(),
-        iosSimulatorArm64(),
-    ).forEach { target ->
-        target.binaries.framework {
-            baseName = "Shared"
-            isStatic = true
-            xcf.add(this)
+    // Kotlin/Native só gera binários Apple em macOS + Xcode. Registramos os alvos
+    // iOS APENAS quando o host é macOS; assim, no Windows, tasks agregadas
+    // (`build`, `check`, `:shared:allTests`, "Build All" da IDE) não tentam
+    // compilar/linkar/testar Apple e quebrar. Num Mac, os alvos aparecem e o
+    // XCFramework `Shared` é montado para o iosApp.
+    if (HostManager.hostIsMac) {
+        val xcf = org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFrameworkConfig(project, "Shared")
+        listOf(
+            iosX64(),
+            iosArm64(),
+            iosSimulatorArm64(),
+        ).forEach { target ->
+            target.binaries.framework {
+                baseName = "Shared"
+                isStatic = true
+                xcf.add(this)
+            }
         }
     }
 
@@ -44,6 +49,8 @@ kotlin {
 
 android {
     namespace = "com.mpx.player.shared"
+    // Mantido alinhado ao :app (compileSdk 35 / minSdk 29). TODO: extrair para o
+    // version catalog quando houver mais módulos para evitar divergência.
     compileSdk = 35
     defaultConfig {
         minSdk = 29

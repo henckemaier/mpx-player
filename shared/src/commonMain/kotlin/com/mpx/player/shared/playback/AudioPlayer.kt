@@ -37,18 +37,30 @@ data class PlaybackState(
     val currentId: String? get() = queueIds.getOrNull(index)
 }
 
+/** Volume do sistema (Android: STREAM_MUSIC; iOS: volume de mídia/`AVAudioSession`). */
+data class VolumeState(val level: Int = 0, val max: Int = 15, val muted: Boolean = false)
+
 /**
- * Fronteira `expect/actual` do player.
+ * Contrato de player comum à UI (Compose Multiplatform) e aos ViewModels.
  *
- * - Android: implementada sobre Media3 (`MediaController` + `PlaybackService`),
- *   adaptando o atual `PlayerController`.
- * - iOS: implementada sobre AVFoundation (`AVQueuePlayer` + `MPNowPlayingInfoCenter`
+ * É uma interface pura; cada plataforma fornece sua implementação:
+ * - Android: adaptador sobre Media3 (`MediaController` + `PlaybackService`),
+ *   a partir do atual `PlayerController`.
+ * - iOS: sobre AVFoundation (`AVQueuePlayer` + `MPNowPlayingInfoCenter`
  *   + `AVAudioSession`).
  *
- * A UI (Compose Multiplatform) e os ViewModels consomem apenas esta interface.
+ * Como obter a instância (fábrica `expect`/DI, e a passagem de `Context` no
+ * Android) será definido no passo 4 da migração — ver PORTING-IOS.md.
  */
 interface AudioPlayer {
     val state: StateFlow<PlaybackState>
+    val volume: StateFlow<VolumeState>
+
+    /**
+     * Inicia/conecta o backend (no Android a conexão ao `MediaController` é
+     * assíncrona; `state.connected` passa a `true` quando pronta). Idempotente.
+     */
+    fun connect()
 
     fun setQueue(items: List<PlaybackItem>, startIndex: Int, sourceLabel: String)
     fun play()
@@ -61,5 +73,10 @@ interface AudioPlayer {
     fun seekToIndex(index: Int)
     fun setShuffle(enabled: Boolean)
     fun setRepeat(mode: RepeatMode)
+
+    /** fraction 0..1 → volume de mídia do sistema. */
+    fun setVolume(fraction: Float)
+    fun toggleMute()
+
     fun release()
 }

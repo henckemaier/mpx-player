@@ -50,8 +50,8 @@ iosApp/        (Xcode, SwiftUI host) → consome o framework Shared.xcframework
 Scaffold do KMP compilando, **sem quebrar o Android**:
 
 - Catálogo (`libs.versions.toml`): plugins `kotlin-multiplatform`, `android-library`; lib `kotlinx-coroutines-core`.
-- Módulo `:shared` com `androidTarget` + alvos `iosX64/iosArm64/iosSimulatorArm64` (XCFramework `Shared`).
-- `commonMain`: `Platform` (`expect`), e a **fronteira do player** — `AudioPlayer` (interface), `PlaybackItem`, `PlaybackState`, `RepeatMode`.
+- Módulo `:shared` com `androidTarget` + alvos `iosX64/iosArm64/iosSimulatorArm64` (XCFramework `Shared`). Os alvos Apple só são **registrados em host macOS** (`HostManager.hostIsMac`), para que `build`/`check`/`allTests` não quebrem no Windows.
+- `commonMain`: `Platform` (`expect`), e a **fronteira do player** — `AudioPlayer` (interface, com `connect()`, `volume`/`setVolume`/`toggleMute`), `PlaybackItem`, `PlaybackState`, `VolumeState`, `RepeatMode`.
 - `androidMain`/`iosMain`: `actual object Platform`; `IosAudioPlayer` (esqueleto conforme à interface, pronto para receber o AVFoundation).
 - `commonTest`: `PlaybackStateTest` (roda no alvo JVM/Android).
 - `:app` passa a depender de `:shared`.
@@ -63,7 +63,7 @@ Scaffold do KMP compilando, **sem quebrar o Android**:
 1. Mover lógica pura (`PlaylistLogic`, `OverrideLogic`, `EqPresets`) para `commonMain` + mover os testes para `commonTest`.
 2. Neutralizar o modelo: `Track.uri` → `String`; adaptar os dois usos no Android.
 3. Trocar `org.json` → kotlinx.serialization e `HttpURLConnection` → Ktor (letras).
-4. Implementar o `actual` Android do `AudioPlayer` adaptando o `PlayerController`.
+4. Implementar o Android do `AudioPlayer` adaptando o `PlayerController`, e **definir a fábrica/DI** (ex.: `expect fun createAudioPlayer(ctx): AudioPlayer` ou injeção), resolvendo a passagem de `Context` no Android e o ciclo `connect()`/`release()`.
 5. Implementar o `AudioPlayer` iOS sobre AVFoundation + biblioteca via `MPMediaQuery`.
 6. Migrar ViewModels para `commonMain` (lifecycle multiplataforma).
 7. Migrar a UI para Compose Multiplatform; criar `iosApp/` (host SwiftUI).
