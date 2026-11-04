@@ -103,6 +103,12 @@ Decididas antes de avançar a migração (aval do Maestro + parecer da Lente). R
 - **Custo:** reavaliar se o repo deixar de ser público (macOS passa a cobrar 10×).
 - Casa com a **guarda de host** já aplicada (`:shared` registra alvos Apple só em macOS) → o loop no Windows segue verde enquanto o CI cuida do lado Apple.
 
+**CI implementado** (`.github/workflows/ci.yml`): dois jobs a cada push/PR.
+- **`android`** (`ubuntu-latest`): `./gradlew :app:assembleDebug test` — build debug + testes unitários (inclui o `commonTest` do `:shared` rodando no alvo Android/JVM).
+- **`ios`** (`macos-latest`): fixa o Xcode (`setup-xcode`), cacheia `~/.konan` + Gradle, e roda `:shared:iosSimulatorArm64Test` (compila o `commonTest` para o simulador e **executa** os testes num simulador bootado) + `:shared:assembleSharedDebugXCFramework` (linka os 3 alvos iOS e monta o XCFramework).
+
+**Até onde o CI valida o iOS sem Mac local:** compila o código Kotlin para iOS (commonMain + iosMain, incluindo a futura impl AVFoundation), roda os testes comuns no **simulador**, e prova que o **XCFramework** monta. O que ele **ainda não** cobre (até existir `iosApp/`): `xcodebuild` do host SwiftUI e render do Compose Multiplatform no simulador — há um passo `TODO` comentado no workflow para quando o `iosApp/` existir. A guarda de host mantém o dev no Windows verde; o job `android` não é afetado (o release.yml segue separado, só no push à main).
+
 ### Risco 2 — Downloader (yt-dlp / `youtubedl-android`) sem equivalente iOS
 
 **Contexto:** `youtubedl-android` empacota Python + yt-dlp + FFmpeg como libs nativas NDK — **Android-only**. Além de não haver equivalente viável no iOS, a **App Store rejeita** apps baixadores de YouTube (**Guideline 2.5.2** — código executável/intérprete embarcado — e ToS do YouTube).

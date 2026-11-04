@@ -1,0 +1,81 @@
+name: CI
+
+# Build + testes a cada push/PR.
+# - Job `android`: compila o APK debug e roda os testes unitários (Linux, barato).
+# - Job `ios`: compila e TESTA o alvo iOS num runner macOS (Kotlin/Native só gera
+#   binários Apple em macOS). Valida o lado Kotlin do porte sem Mac local.
+# O workflow de release (release.yml) é separado e só roda no push à main.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (com cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug + testes unitários
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug test --no-daemon
+
+  ios:
+    name: iOS (compila + testa no simulador)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Fixa o Xcode: o macos-latest muda o Xcode default periodicamente e o
+      # Kotlin/Native 2.0.21 tem faixa de Xcode suportada — sem pin, quebra com
+      # erro críptico. Ajuste a versão para uma presente no runner se necessário.
+      - name: Fixa a versão do Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.1'
+
+      - name: Set up Gradle (com cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      # A distribuição do Kotlin/Native (~/.konan) é grande; sem cache cada run
+      # baixa centenas de MB. Chave atrelada ao catálogo (muda com a versão do Kotlin).
+      - name: Cache do Kotlin/Native (~/.konan)
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      # O runner macOS é Apple Silicon (arm64): testar em iosSimulatorArm64 (não
+      # iosX64, que exigiria Rosetta). iosSimulatorArm64Test compila o commonTest
+      # para o simulador E roda os testes num simulador bootado — já exercita o
+      # simulador, não só linka o framework. Em seguida monta o XCFramework.
+      - name: Testa no simulador arm64 + monta XCFramework
+        run: |
+          chmod +x gradlew
+          ./gradlew :shared:iosSimulatorArm64Test :shared:assembleSharedDebugXCFramework --no-daemon
+
+      # TODO(quando existir iosApp/): validar o HOST SwiftUI + render do Compose
+      # Multiplatform com xcodebuild + boot de simulador (compilar o framework não
+      # prova que o app roda). Algo como:
+      #   xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+      #     -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 15' build
