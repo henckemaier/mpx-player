@@ -24,16 +24,16 @@ jobs:
     name: Android (build + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle (com cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Build debug + testes unitários
         run: |
@@ -48,10 +48,10 @@ jobs:
     # usamos uma imagem que ainda traz um Xcode na faixa suportada.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -70,17 +70,17 @@ jobs:
       # vêm com os componentes Android reduzidos, então instalamos explicitamente
       # (senão o job quebra na configuração, antes de qualquer task iOS).
       - name: Set up Android SDK (para configurar o :shared)
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
 
       - name: Set up Gradle (com cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       # A distribuição do Kotlin/Native (~/.konan) é grande; sem cache cada run
       # baixa centenas de MB. Chave atrelada ao catálogo (muda com a versão do Kotlin).
       - name: Cache do Kotlin/Native (~/.konan)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
