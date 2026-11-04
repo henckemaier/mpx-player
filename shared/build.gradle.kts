@@ -50,11 +50,15 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
-        // Engine Ktor do iOS (Darwin/NSURLSession). Só em host macOS, onde os alvos
-        // Apple (e o source set iosMain) existem — no Windows este bloco não roda.
+        // Engine Ktor do iOS (Darwin/NSURLSession). O source set `iosMain` é criado pela hierarquia
+        // padrão só em host macOS e apenas em afterEvaluate — por isso NÃO usamos getByName aqui
+        // (eager, falharia por ordem de avaliação). Configuramos de forma preguiçosa: quando/se o
+        // `iosMain` for criado, recebe a dependência. No Windows o bloco nem roda (sem alvos Apple).
         if (HostManager.hostIsMac) {
-            getByName("iosMain").dependencies {
-                implementation(libs.ktor.client.darwin)
+            configureEach {
+                if (name == "iosMain") {
+                    dependencies { implementation(libs.ktor.client.darwin) }
+                }
             }
         }
     }
