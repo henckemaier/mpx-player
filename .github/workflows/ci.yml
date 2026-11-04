@@ -56,13 +56,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Fixa o Xcode na faixa suportada pelo Kotlin/Native 2.0.21 (<= 16.0). Usa
-      # major.minor (não patch exato) p/ sobreviver à rotação da imagem. Se a
-      # macos-14 não trouxer mais 16.0, o log do setup-xcode lista o que há.
+      # A macos-14 traz hoje: 16.2, 16.1, 15.4, 15.3, 15.2, 15.1, 15.0.1 (não 16.0).
+      # 15.4 está dentro da faixa suportada pelo Kotlin/Native 2.0.21 (sem o aviso
+      # que 16.1+ emite). major.minor, não patch, p/ sobreviver à rotação da imagem.
       - name: Fixa a versão do Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.0'
+          xcode-version: '15.4'
 
       # O :shared aplica com.android.library, então o Gradle CONFIGURA o plugin
       # Android mesmo rodando só as tasks iOS — e isso exige ANDROID_HOME +
