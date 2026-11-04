@@ -190,7 +190,7 @@ class PlayerController(private val context: Context) {
     private fun Track.toMediaItem(): MediaItem = MediaItem.Builder()
         .setMediaId(id.toString())
         .setUri(uri)
-        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
+        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(uri)).build())
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)

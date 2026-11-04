@@ -126,7 +126,7 @@ class LibraryRepository(
                     val artist = c.getString(iArtist).orUnknown()
                     out += Track(
                         id = id,
-                        uri = ContentUris.withAppendedId(collection, id),
+                        uri = ContentUris.withAppendedId(collection, id).toString(),
                         title = c.getString(iTitle) ?: c.getString(iName).orEmpty(),
                         artist = artist,
                         album = c.getString(iAlbum).orUnknown(),

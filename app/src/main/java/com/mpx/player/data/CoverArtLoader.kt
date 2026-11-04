@@ -30,11 +30,11 @@ class CoverArtLoader(private val context: Context) {
      * style: 1 = DITHER (1-bit no tom do tema, ou original se mono=false), 2 = ASCII.
      * Retorna null quando a faixa não tem arte embutida (a UI desenha a capa gerada).
      */
-    suspend fun load(albumId: Long, trackUri: Uri, style: Int, mono: Boolean, accent: Int, bg: Int): CoverArt? =
+    suspend fun load(albumId: Long, trackUri: String, style: Int, mono: Boolean, accent: Int, bg: Int): CoverArt? =
         withContext(Dispatchers.Default) {
             val key = "$albumId/$style/$mono/$accent/$bg"
             processed.get(key)?.let { return@withContext it }
-            val src = rawBitmap(albumId, trackUri) ?: return@withContext null
+            val src = rawBitmap(albumId, Uri.parse(trackUri)) ?: return@withContext null
             process(src, key, style, mono, accent, bg)
         }
 

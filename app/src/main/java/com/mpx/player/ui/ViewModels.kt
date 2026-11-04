@@ -124,7 +124,7 @@ class PlayerViewModel(private val app: AppContainer) : ViewModel() {
         var bitrate = t.bitrate?.let { "${it / 1000}K" } ?: "---"
         val retr = MediaMetadataRetriever()
         try {
-            retr.setDataSource(app.context, t.uri)
+            retr.setDataSource(app.context, Uri.parse(t.uri))
             if (bitrate == "---") retr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull()?.let { bitrate = "${it / 1000}K" }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 retr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)?.toIntOrNull()?.let {
@@ -278,12 +278,12 @@ class LibraryViewModel(private val app: AppContainer) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val resolver = app.context.contentResolver
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                runCatching { MediaStore.createDeleteRequest(resolver, listOf(track.uri)).intentSender }
+                runCatching { MediaStore.createDeleteRequest(resolver, listOf(Uri.parse(track.uri))).intentSender }
                     .onSuccess { _deleteRequests.emit(it) }
                     .onFailure { cancelDelete() }
             } else {
                 try {
-                    resolver.delete(track.uri, null, null)
+                    resolver.delete(Uri.parse(track.uri), null, null)
                     onDeleteConfirmed()
                 } catch (e: RecoverableSecurityException) {
                     _deleteRequests.emit(e.userAction.actionIntent.intentSender)

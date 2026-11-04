@@ -60,9 +60,9 @@ Scaffold do KMP compilando, **sem quebrar o Android**:
 
 ## 4. Ordem de migração proposta (próximos passos)
 
-1. Mover lógica pura (`PlaylistLogic`, `OverrideLogic`, `EqPresets`) para `commonMain` + mover os testes para `commonTest`.
-2. Neutralizar o modelo: `Track.uri` → `String`; adaptar os dois usos no Android.
-3. Trocar `org.json` → kotlinx.serialization e `HttpURLConnection` → Ktor (letras).
+1. ✅ **FEITO.** Lógica pura (`PlaylistLogic`, `OverrideLogic`, `EqPresets`) + modelos `Playlist`/`TrackOverride` movidos para `commonMain`; testes em `commonTest`. Serialização reescrita de `org.json` → `kotlinx.serialization.json` (mesmo formato de arquivo). Verificado: `:shared:testDebugUnitTest` + `:app:assembleDebug`.
+2. ✅ **FEITO.** Modelo neutralizado: `Track.uri: android.net.Uri` → `String`, e `Track`/`Album`/`Artist` movidos para `commonMain` (agora puros). Call sites Android adaptados com `Uri.parse(...)`/`.toString()` (`LibraryRepository`, `PlayerController`, `ViewModels` ×3, `CoverArtLoader.load` passa a receber `String`). Verificado: build + testes.
+3. **(próximo)** Trocar `HttpURLConnection` → Ktor (letras: LRCLIB/NetEase) em `commonMain`; a serialização de playlists/overrides já migrou no passo 1 (resta `org.json` só em `LyricsRepository`/`UpdateRepository`, Android-only por ora).
 4. Implementar o Android do `AudioPlayer` adaptando o `PlayerController`, e **definir a fábrica/DI** (ex.: `expect fun createAudioPlayer(ctx): AudioPlayer` ou injeção), resolvendo a passagem de `Context` no Android e o ciclo `connect()`/`release()`.
 5. Implementar o `AudioPlayer` iOS sobre AVFoundation + biblioteca via `MPMediaQuery`.
 6. Migrar ViewModels para `commonMain` (lifecycle multiplataforma).
