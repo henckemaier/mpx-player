@@ -38,7 +38,7 @@ import platform.MediaPlayer.MPNowPlayingInfoCenter
 import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
 import platform.MediaPlayer.MPRemoteCommandCenter
-import platform.MediaPlayer.MPRemoteCommandHandlerStatus
+import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 
 /**
  * Player iOS sobre AVFoundation, implementando o contrato comum [AudioPlayer] com
@@ -349,11 +349,11 @@ class IosAudioPlayer : AudioPlayer {
 
     private fun setupRemoteCommands() {
         val cc = MPRemoteCommandCenter.sharedCommandCenter()
-        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
+        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatusSuccess }
+        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatusSuccess }
+        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatusSuccess }
+        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatusSuccess }
+        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatusSuccess }
     }
 
     private fun teardownRemoteCommands() {
