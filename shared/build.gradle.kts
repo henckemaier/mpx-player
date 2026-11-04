@@ -41,9 +41,21 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.ktor.client.core)
+        }
+        androidMain.dependencies {
+            // Engine Ktor do Android (baseado em HttpURLConnection; sem trazer OkHttp).
+            implementation(libs.ktor.client.android)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+        // Engine Ktor do iOS (Darwin/NSURLSession). Só em host macOS, onde os alvos
+        // Apple (e o source set iosMain) existem — no Windows este bloco não roda.
+        if (HostManager.hostIsMac) {
+            getByName("iosMain").dependencies {
+                implementation(libs.ktor.client.darwin)
+            }
         }
     }
 }

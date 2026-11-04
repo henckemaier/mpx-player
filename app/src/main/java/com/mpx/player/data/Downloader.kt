@@ -249,7 +249,7 @@ class Downloader(
     }
 
     /** Salva `<base>.lrc` (base = nome do arquivo sem extensão, lowercase) se o LRCLIB tiver letra sincronizada. */
-    private fun fetchAndStoreLyrics(file: File, meta: Tags): Boolean {
+    private suspend fun fetchAndStoreLyrics(file: File, meta: Tags): Boolean {
         val synced = runCatching { lyrics.fetchSynced(meta.title, meta.artist, meta.album, meta.durationSec.toLong()) }
             .getOrNull()?.takeIf { it.isNotBlank() } ?: return false
         return runCatching {

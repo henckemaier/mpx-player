@@ -2,9 +2,7 @@ package com.mpx.player.model
 
 // Track, Album e Artist foram movidos para :shared/commonMain (com.mpx.player.model), com
 // Track.uri neutralizado para String (comum a Android/iOS).
-// Playlist, TrackOverride e EqPresets também vivem em :shared/commonMain.
-
-data class LyricLine(val timeMs: Long, val text: String)
+// Playlist, TrackOverride, EqPresets e LyricLine também vivem em :shared/commonMain.
 
 data class UserSettings(
     val theme: Int = 0,
