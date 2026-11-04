@@ -349,11 +349,11 @@ class IosAudioPlayer : AudioPlayer {
 
     private fun setupRemoteCommands() {
         val cc = MPRemoteCommandCenter.sharedCommandCenter()
-        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatusSuccess }
-        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatusSuccess }
-        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatusSuccess }
-        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatusSuccess }
-        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatusSuccess }
+        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
+        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
+        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
+        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
+        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
     }
 
     private fun teardownRemoteCommands() {
