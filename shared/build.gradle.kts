@@ -46,6 +46,10 @@ kotlin {
         androidMain.dependencies {
             // Engine Ktor do Android (baseado em HttpURLConnection; sem trazer OkHttp).
             implementation(libs.ktor.client.android)
+            // Player Android do contrato comum (AndroidAudioPlayer): MediaController/MediaSessionService.
+            implementation(libs.androidx.media3.session)
+            implementation(libs.kotlinx.coroutines.guava)   // await() do ListenableFuture
+            implementation(libs.kotlinx.coroutines.android)  // Dispatchers.Main (fala com o MediaController)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

@@ -49,8 +49,15 @@ data class VolumeState(val level: Int = 0, val max: Int = 15, val muted: Boolean
  * - iOS: sobre AVFoundation (`AVQueuePlayer` + `MPNowPlayingInfoCenter`
  *   + `AVAudioSession`).
  *
- * Como obter a instância (fábrica `expect`/DI, e a passagem de `Context` no
- * Android) será definido no passo 4 da migração — ver PORTING-IOS.md.
+ * Como obter a instância: fábrica `createAudioPlayer(PlatformContext)` (passo 4).
+ *
+ * Threading: os métodos mutadores devem ser chamados na thread principal do app
+ * (no Android o `MediaController` exige a thread em que foi criado; a implementação
+ * assume a main). [state] e [volume] podem ser observados de qualquer thread.
+ *
+ * [setQueue] e [play] podem ser chamados antes de [connect] concluir: a fila é
+ * refletida em [state] na hora e aplicada ao backend quando a conexão fica pronta
+ * (não é descartada em silêncio).
  */
 interface AudioPlayer {
     val state: StateFlow<PlaybackState>
