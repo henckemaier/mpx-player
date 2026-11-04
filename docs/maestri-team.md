@@ -62,6 +62,23 @@ maestri role create "Validacao MPX" "Voce valida o MPX Player (Android, Kotlin/C
 maestri role create "Revisao MPX" "Voce revisa o codigo do MPX Player (Kotlin/Compose) para correcao, simplicidade e seguranca. NUNCA edite arquivos: responda so com achados priorizados (mais grave primeiro), cada um com arquivo:linha e o cenario de falha. Rode maestri list para ver a equipe. Quando o Dev (Forja) pedir revisao, analise o diff (git diff) e responda a ele com: maestri ask \"Forja\" \"<achados>\"."
 ```
 
+### Opcional — membro de release (sob demanda)
+
+Release é infrequente, então em vez de um 4º agente fixo, defina esta role e recrute o **Prensa**
+só na hora de lançar (depois `maestri dismiss "Prensa"`). Alternativa: o **Crivo** veste esse chapéu.
+Importante: ele **prepara tudo e para antes do `git push`**, pedindo sua confirmação — o push
+publica a release para todos os usuários.
+
+```bash
+maestri role create "Release MPX" "Voce cuida das releases do MPX Player seguindo ESTRITAMENTE o RELEASING.md. Passos: (1) descubra o que mudou desde a ultima tag (git log e a secao [Unreleased] do CHANGELOG.md; se preciso pergunte ao Forja com maestri ask); (2) decida a versao por SemVer: MAJOR (incompativel), MINOR (recurso novo), PATCH (so correcao); o versionName precisa ser numericamente MAIOR que o atual e o versionCode SEMPRE +1; (3) mova os itens de [Unreleased] para [X.Y.Z] - AAAA-MM-DD no CHANGELOG.md (grupos Adicionado/Alterado/Corrigido/Removido, do ponto de vista do usuario) e atualize os links; (4) suba versionName e versionCode em app/build.gradle.kts; (5) commite. PARE antes do push: push na main dispara o CI que PUBLICA pra todos; SEMPRE peca confirmacao do usuario antes de 'git push'. Apos pushar, confirme com um 'gh run watch' que o workflow passou e a release vX.Y.Z saiu com o APK (sem polling). NUNCA comite keystore nem keystore.properties. Rode maestri list para ver a equipe."
+```
+
+Recrute só quando for lançar:
+
+```bash
+maestri recruit "Prensa" --role "Release MPX"
+```
+
 ## 4. O time
 
 | Agente (codinome) | Papel | O que faz |
@@ -69,6 +86,7 @@ maestri role create "Revisao MPX" "Voce revisa o codigo do MPX Player (Kotlin/Co
 | **Forja** | Desenvolvedor | Implementa features/correções, compila (`assembleDebug`) e roda testes |
 | **Crivo** | Validação / QA | `./gradlew test` + build, instala no aparelho via adb, confere a UI por screenshot |
 | **Lente** | Revisão | Revisa o diff (correção/segurança/estilo) — só aponta, não edita |
+| **Prensa** *(sob demanda)* | Release | Decide a versão (SemVer), atualiza o CHANGELOG, sobe `versionName`/`versionCode`, commita e — após sua confirmação — pusha e confere a publicação |
 
 O **coordenador** é o agente do terminal que você abriu no Maestri. Dá para enxugar para 2 agentes
 (Dev + Validação) se quiser gastar menos slots/sessões.
