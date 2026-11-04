@@ -101,6 +101,7 @@ Decididas antes de avançar a migração (aval do Maestro + parecer da Lente). R
 - **Fixar a versão do Xcode** (ex.: `maxim-lobanov/setup-xcode`): Kotlin/Native 2.0.21 tem faixa suportada; o Xcode default do runner muda e quebra com erro críptico.
 - **Cache do Konan + Gradle** no CI (a dist do Kotlin/Native é grande; sem cache cada run baixa centenas de MB).
 - **Custo:** reavaliar se o repo deixar de ser público (macOS passa a cobrar 10×).
+- **Dependência Kotlin ↔ Xcode (descoberta no 1º run do CI).** O `macos-latest` hoje só traz **Xcode 26.x**, e o **Kotlin/Native 2.0.21** (out/2024) só foi testado até ~Xcode 16.0 — a toolchain do 26 provavelmente quebra o link/cinterop nativo. **Rota A (atual):** rodar o job iOS numa imagem mais antiga (`macos-14`) com Xcode ≤ 16.0, sem subir o Kotlin. **Rota B (definitiva):** subir o Kotlin para a linha que acompanha o Xcode 26 (~2.2.20+) — mexe em KGP + plugin do Compose compiler + reteste do Android. **Conclusão:** o porte iOS vai exigir manter o Kotlin alinhado ao Xcode do runner; a Rota A é um paliativo enquanto a imagem antiga existir.
 - Casa com a **guarda de host** já aplicada (`:shared` registra alvos Apple só em macOS) → o loop no Windows segue verde enquanto o CI cuida do lado Apple.
 
 **CI implementado** (`.github/workflows/ci.yml`): dois jobs a cada push/PR.
