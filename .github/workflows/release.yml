@@ -56,3 +56,17 @@ jobs:
           files: mpx-player-v${{ steps.ver.outputs.version }}.apk
           fail_on_unmatched_files: true
           generate_release_notes: true
+          body: |
+            ## 📱 Instalação
+
+            **Android** — baixe o `.apk` abaixo e instale (é preciso permitir a instalação
+            de "fontes desconhecidas"). Quem já tem o app recebe o update pelo **CHECK UPDATE**.
+
+            **iOS** — **não há instalador pronto** (não existe equivalente ao `.apk` no iPhone).
+            A Apple exige um build **assinado** por conta de desenvolvedor, e o downloader do
+            YouTube não é permitido na App Store. Para rodar em iOS é preciso **compilar o
+            projeto no Xcode (macOS)** você mesmo — veja a seção *Releases & distribuição* do
+            [README](https://github.com/henckemaier/mpx-player#releases--auto-update).
+
+            ---
+
