@@ -8,8 +8,16 @@ name: CI
 
 on:
   push:
+    branches: [ main, 'feat/**' ]
   pull_request:
   workflow_dispatch:
+
+# Cancela runs superados do mesmo ref (economiza minutos macOS em pushes rápidos).
+# Obs: um push num branch com PR aberto ainda dispara push E pull_request (refs
+# distintos) — aceitável; estreite para só `pull_request` se quiser zerar isso.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   android:
@@ -51,6 +59,16 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '16.1'
+
+      # O :shared aplica com.android.library, então o Gradle CONFIGURA o plugin
+      # Android mesmo rodando só as tasks iOS — e isso exige ANDROID_HOME +
+      # platform-35 + build-tools + licença aceita. As imagens macOS do GitHub
+      # vêm com os componentes Android reduzidos, então instalamos explicitamente
+      # (senão o job quebra na configuração, antes de qualquer task iOS).
+      - name: Set up Android SDK (para configurar o :shared)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
 
       - name: Set up Gradle (com cache)
         uses: gradle/actions/setup-gradle@v4

@@ -105,7 +105,7 @@ Decididas antes de avançar a migração (aval do Maestro + parecer da Lente). R
 
 **CI implementado** (`.github/workflows/ci.yml`): dois jobs a cada push/PR.
 - **`android`** (`ubuntu-latest`): `./gradlew :app:assembleDebug test` — build debug + testes unitários (inclui o `commonTest` do `:shared` rodando no alvo Android/JVM).
-- **`ios`** (`macos-latest`): fixa o Xcode (`setup-xcode`), cacheia `~/.konan` + Gradle, e roda `:shared:iosSimulatorArm64Test` (compila o `commonTest` para o simulador e **executa** os testes num simulador bootado) + `:shared:assembleSharedDebugXCFramework` (linka os 3 alvos iOS e monta o XCFramework).
+- **`ios`** (`macos-latest`): fixa o Xcode (`setup-xcode`), instala o **Android SDK/platform-35** (o `:shared` aplica `com.android.library`, então o Gradle configura o plugin Android mesmo para tasks iOS), cacheia `~/.konan` + Gradle, e roda `:shared:iosSimulatorArm64Test` (compila o `commonTest` para o simulador e **executa** os testes num simulador bootado) + `:shared:assembleSharedDebugXCFramework` (linka os 3 alvos iOS e monta o XCFramework).
 
 **Até onde o CI valida o iOS sem Mac local:** compila o código Kotlin para iOS (commonMain + iosMain, incluindo a futura impl AVFoundation), roda os testes comuns no **simulador**, e prova que o **XCFramework** monta. O que ele **ainda não** cobre (até existir `iosApp/`): `xcodebuild` do host SwiftUI e render do Compose Multiplatform no simulador — há um passo `TODO` comentado no workflow para quando o `iosApp/` existir. A guarda de host mantém o dev no Windows verde; o job `android` não é afetado (o release.yml segue separado, só no push à main).
 
