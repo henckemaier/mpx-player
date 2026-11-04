@@ -7,10 +7,23 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
-import platform.AVFoundation.AVPlayerActionAtItemEnd
+import platform.AVFAudio.outputVolume
+import platform.AVFAudio.setActive
+import platform.AVFoundation.AVPlayerActionAtItemEndAdvance
+import platform.AVFoundation.AVPlayerActionAtItemEndNone
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVQueuePlayer
+import platform.AVFoundation.actionAtItemEnd
+import platform.AVFoundation.addPeriodicTimeObserverForInterval
+import platform.AVFoundation.currentItem
+import platform.AVFoundation.currentTime
+import platform.AVFoundation.duration
+import platform.AVFoundation.pause
+import platform.AVFoundation.play
+import platform.AVFoundation.rate
+import platform.AVFoundation.removeTimeObserver
+import platform.AVFoundation.seekToTime
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotification
@@ -191,14 +204,15 @@ class IosAudioPlayer : AudioPlayer {
 
     override fun previous() {
         val p = player ?: return
-        // >3s na faixa atual (ou já no começo): reinicia; senão, vai pra anterior
-        // (espelha o seekToPrevious do Android).
-        if (currentSeconds(p) > 3.0 || pos <= 0) {
-            p.seekToTime(CMTimeMakeWithSeconds(0.0, TIMESCALE))
-        } else {
-            pos--
-            rebuildPlayerItems()
-            p.play()
+        // >3s na faixa atual: reinicia; senão, vai pra anterior (espelha o seekToPrevious
+        // do Android). No começo da fila com repeat ALL, dá a volta pra última.
+        when {
+            currentSeconds(p) > 3.0 -> p.seekToTime(CMTimeMakeWithSeconds(0.0, TIMESCALE))
+            pos > 0 -> { pos--; rebuildPlayerItems(); p.play() }
+            _state.value.repeat == RepeatMode.ALL && order.isNotEmpty() -> {
+                pos = order.lastIndex; rebuildPlayerItems(); p.play()
+            }
+            else -> p.seekToTime(CMTimeMakeWithSeconds(0.0, TIMESCALE))
         }
         syncState()
         updateNowPlaying()
@@ -230,12 +244,18 @@ class IosAudioPlayer : AudioPlayer {
 
     override fun setShuffle(enabled: Boolean) {
         _state.update { it.copy(shuffle = enabled) }
-        if (player == null || items.isEmpty()) return
+        val p = player ?: return
+        if (items.isEmpty()) return
         val current = order.getOrNull(pos) ?: 0
+        val resumeSec = currentSeconds(p)       // preserva a posição da faixa atual
+        val wasPlaying = p.rate != 0f
         order = buildPlayOrder(items.size, current, enabled)
-        pos = 0 // a faixa atual fica no topo da nova ordem
+        // Mantém a faixa ATUAL (no shuffle ela fica no topo→0; na identidade, no índice dela);
+        // pos=0 fixo pularia pra faixa 0 ao DESLIGAR o shuffle.
+        pos = order.indexOf(current).coerceAtLeast(0)
         rebuildPlayerItems()
-        if (_state.value.isPlaying) player?.play()
+        if (resumeSec > 0) p.seekToTime(CMTimeMakeWithSeconds(resumeSec, TIMESCALE))
+        if (wasPlaying) p.play()
         syncState()
     }
 
@@ -321,19 +341,19 @@ class IosAudioPlayer : AudioPlayer {
 
     private fun applyActionAtItemEnd(p: AVQueuePlayer) {
         p.actionAtItemEnd =
-            if (_state.value.repeat == RepeatMode.ONE) AVPlayerActionAtItemEnd.AVPlayerActionAtItemEndNone
-            else AVPlayerActionAtItemEnd.AVPlayerActionAtItemEndAdvance
+            if (_state.value.repeat == RepeatMode.ONE) AVPlayerActionAtItemEndNone
+            else AVPlayerActionAtItemEndAdvance
     }
 
     // --- Tela de bloqueio ---
 
     private fun setupRemoteCommands() {
         val cc = MPRemoteCommandCenter.sharedCommandCenter()
-        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
-        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatus.MPRemoteCommandHandlerStatusSuccess }
+        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatusSuccess }
+        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatusSuccess }
+        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatusSuccess }
+        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatusSuccess }
+        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatusSuccess }
     }
 
     private fun teardownRemoteCommands() {
@@ -346,6 +366,8 @@ class IosAudioPlayer : AudioPlayer {
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
     }
 
+    // TODO(iOS): capa na tela de bloqueio — MPMediaItemPropertyArtwork a partir de
+    // PlaybackItem.artworkUri (carregar UIImage async → MPMediaItemArtwork). Passo seguinte.
     private fun updateNowPlaying() {
         val p = player ?: return
         val item = items.getOrNull(order.getOrNull(pos) ?: -1) ?: return
