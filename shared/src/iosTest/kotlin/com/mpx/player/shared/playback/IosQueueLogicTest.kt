@@ -38,8 +38,8 @@ class IosQueueLogicTest {
     fun endAdvance_porModo() {
         assertEquals(1, endAdvancePos(0, 3, RepeatMode.OFF))
         assertNull(endAdvancePos(2, 3, RepeatMode.OFF))          // fim sem repeat: para
-        assertEquals(0, endAdvancePos(2, 3, RepeatMode.ALL))     // wrap
-        assertEquals(1, endAdvancePos(1, 3, RepeatMode.ALL))
+        assertEquals(0, endAdvancePos(2, 3, RepeatMode.ALL))     // fim → wrap pra 0
+        assertEquals(2, endAdvancePos(1, 3, RepeatMode.ALL))     // meio → avança
         assertEquals(1, endAdvancePos(1, 3, RepeatMode.ONE))     // ONE: reinicia a mesma
         assertEquals(0, endAdvancePos(0, 1, RepeatMode.ALL))     // fila de 1 com ALL: volta a 0
     }
