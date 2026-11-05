@@ -45,8 +45,8 @@ data class DownloadState(
  */
 class Downloader(
     private val context: Context,
-    private val library: LibraryRepository,
-    private val lyrics: LyricsRepository,
+    private val library: AndroidLibraryRepository,
+    private val lyrics: AndroidLyricsRepository,
     private val settings: AndroidSettingsRepository,
 ) {
     private val _state = MutableStateFlow(DownloadState())

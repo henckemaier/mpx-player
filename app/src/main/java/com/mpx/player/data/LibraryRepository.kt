@@ -18,26 +18,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class LibraryState(
-    val tracks: List<Track> = emptyList(),
-    val albums: List<Album> = emptyList(),
-    val artists: List<Artist> = emptyList(),
-    val scanning: Boolean = false,
-    val scanned: Boolean = false,
-    val newSinceLastScan: Int = 0,
-) {
-    private val byId: Map<Long, Track> by lazy { tracks.associateBy { it.id } }
-    fun track(id: Long): Track? = byId[id]
+// LibraryState foi movido para :shared/commonMain (com.mpx.player.data.LibraryState).
 
-    private val byKey: Map<String, Track> by lazy { tracks.associateBy { it.key } }
-    fun trackByKey(key: String): Track? = byKey[key]
-    fun tracksForKeys(keys: List<String>): List<Track> = keys.mapNotNull { byKey[it] }
-}
-
-class LibraryRepository(
+class AndroidLibraryRepository(
     private val context: Context,
     private val overrides: OverrideRepository,
-) {
+) : LibraryRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private var rawTracks: List<Track> = emptyList()
@@ -46,7 +32,7 @@ class LibraryRepository(
     @Volatile private var scanningFlag = false
 
     private val _state = MutableStateFlow(LibraryState())
-    val state: StateFlow<LibraryState> = _state.asStateFlow()
+    override val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     init {
         // Re-aplica os overrides (título/capa) sem re-consultar o MediaStore quando eles mudam.

@@ -45,8 +45,9 @@ class AndroidSettingsRepository(private val context: Context) : SettingsReposito
 
     val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
 
-    /** Parte comum do contrato [SettingsRepository] usada pelo EqViewModel (multiplataforma). */
+    /** Parte comum do contrato [SettingsRepository] usada pelos ViewModels migrados. */
     override val eq: Flow<EqSettings> = settings.map { it.eq }
+    override val lrcTreeUri: Flow<String?> = settings.map { it.lrcTreeUri }
 
     private fun Preferences.toSettings(): UserSettings {
         val d = UserSettings()

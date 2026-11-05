@@ -14,6 +14,9 @@ interface SettingsRepository {
     /** Configuração atual do equalizador, observável. */
     val eq: Flow<EqSettings>
 
+    /** Árvore SAF (ou caminho) das letras locais; `null` se não configurada. */
+    val lrcTreeUri: Flow<String?>
+
     /** Aplica uma transformação atômica sobre o [EqSettings] persistido. */
     suspend fun updateEq(transform: (EqSettings) -> EqSettings)
 }

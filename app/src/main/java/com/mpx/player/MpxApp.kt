@@ -2,14 +2,14 @@ package com.mpx.player
 
 import android.app.Application
 import android.content.Context
+import com.mpx.player.data.AndroidLibraryRepository
+import com.mpx.player.data.AndroidLyricsRepository
+import com.mpx.player.data.AndroidPlaylistRepository
+import com.mpx.player.data.AndroidSettingsRepository
 import com.mpx.player.data.CoverArtLoader
 import com.mpx.player.data.Downloader
-import com.mpx.player.data.LibraryRepository
-import com.mpx.player.data.LyricsRepository
 import com.mpx.player.data.OverrideRepository
 import com.mpx.player.data.PlaylistImporter
-import com.mpx.player.data.PlaylistRepository
-import com.mpx.player.data.AndroidSettingsRepository
 import com.mpx.player.data.UpdateRepository
 import com.mpx.player.di.AppContainer
 import com.mpx.player.playback.PlayerController
@@ -22,10 +22,10 @@ import com.mpx.player.playback.PlayerController
 class AndroidAppContainer(val context: Context) : AppContainer {
     override val settings = AndroidSettingsRepository(context)
     val overrides = OverrideRepository(context)
-    val library = LibraryRepository(context, overrides)
-    val lyrics = LyricsRepository(context)
+    override val library = AndroidLibraryRepository(context, overrides)
+    override val lyrics = AndroidLyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)
-    val playlists = PlaylistRepository(context)
+    override val playlists = AndroidPlaylistRepository(context)
     val covers = CoverArtLoader(context)
     val player = PlayerController(context)
     val downloader = Downloader(context, library, lyrics, settings)

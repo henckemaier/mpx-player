@@ -19,7 +19,7 @@ import kotlin.coroutines.coroutineContext
  * escolhida pelo usuário via Storage Access Framework (índice cacheado até a pasta mudar). A busca
  * ONLINE (LRCLIB → NetEase) e o parse de `.lrc` ficam em [LyricsApi] (:shared, multiplataforma).
  */
-class LyricsRepository(private val context: Context) {
+class AndroidLyricsRepository(private val context: Context) : LyricsRepository {
 
     private val api = LyricsApi()
 
@@ -28,13 +28,13 @@ class LyricsRepository(private val context: Context) {
 
     /** Incrementa quando as letras mudam, para o Now Playing recarregar a faixa atual na hora. */
     private val _version = MutableStateFlow(0)
-    val version: StateFlow<Int> = _version
+    override val version: StateFlow<Int> = _version
 
     suspend fun countLrc(treeUri: String?): Int = withContext(Dispatchers.IO) {
         if (treeUri == null) 0 else ensureIndex(treeUri).size
     }
 
-    suspend fun load(track: Track, treeUri: String?): List<LyricLine> = withContext(Dispatchers.IO) {
+    override suspend fun load(track: Track, treeUri: String?): List<LyricLine> = withContext(Dispatchers.IO) {
         // 1) letras baixadas pelo app (pasta interna)
         localLyric(track)?.let { return@withContext it }
         // 2) pasta .lrc escolhida pelo usuário (SAF)

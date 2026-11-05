@@ -23,12 +23,12 @@ internal fun File.writeAtomic(text: String) {
 }
 
 /** Persiste playlists em filesDir/playlists.json e expõe como StateFlow. */
-class PlaylistRepository(private val context: Context) {
+class AndroidPlaylistRepository(private val context: Context) : PlaylistRepository {
 
     private val file: File get() = File(context.filesDir, "playlists.json")
 
     private val _playlists = MutableStateFlow(load())
-    val playlists: StateFlow<List<Playlist>> = _playlists.asStateFlow()
+    override val playlists: StateFlow<List<Playlist>> = _playlists.asStateFlow()
 
     private fun load(): List<Playlist> =
         PlaylistLogic.ensureFavorites(
@@ -48,8 +48,8 @@ class PlaylistRepository(private val context: Context) {
     fun rename(id: String, name: String) = update { PlaylistLogic.renamed(it, id, name) }
     fun delete(id: String) = update { PlaylistLogic.deleted(it, id) }
     fun setPhoto(id: String, photo: String?) = update { PlaylistLogic.photoSet(it, id, photo) }
-    fun addTrack(id: String, key: String) = update { PlaylistLogic.withTrack(it, id, key) }
+    override fun addTrack(id: String, key: String) = update { PlaylistLogic.withTrack(it, id, key) }
     fun removeTrack(id: String, key: String) = update { PlaylistLogic.withoutTrack(it, id, key) }
-    fun toggleFavorite(key: String) = update { PlaylistLogic.favoriteToggled(it, key) }
+    override fun toggleFavorite(key: String) = update { PlaylistLogic.favoriteToggled(it, key) }
     fun purgeKey(key: String) = update { PlaylistLogic.purgeKey(it, key) }
 }
