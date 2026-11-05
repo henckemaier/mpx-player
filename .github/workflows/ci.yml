@@ -42,15 +42,13 @@ jobs:
 
   ios:
     name: iOS (compila + testa no simulador)
-    # macos-latest hoje só traz Xcode 26.x, e o Kotlin/Native 2.0.21 (out/2024)
-    # foi testado só até ~Xcode 16.0 — a toolchain do 26 provavelmente quebra o
-    # link/cinterop nativo. Até subir o Kotlin (ver PORTING-IOS.md §6, Risco 1),
-    # fixamos uma imagem que ainda traz um Xcode na faixa suportada e pinamos a
-    # versão do Xcode via setup-xcode (abaixo).
-    # NOTA: macos-14 foi APOSENTADA pelo GitHub; migramos p/ macos-15. O pin de Xcode
-    # 15.4 ficou insatisfazível (removido de todos os runners hospedados), então o
-    # SPIKE A (Risco 1) passa a pinar um Xcode 16.x (abaixo), ainda SEM subir o
-    # Kotlin/Native 2.0.21 — para medir se a toolchain atual linka/cinteropa no 16.x.
+    # Runner macOS p/ o lado Apple do porte (ver PORTING-IOS.md §6, Risco 1 — RESOLVIDO).
+    # Historia: macos-14 foi APOSENTADA pelo GitHub e o Xcode 15.4 saiu de todos os
+    # runners hospedados, derrubando o pin fixo antigo. Hoje usamos macos-15 + Xcode
+    # 'latest-stable' (pin abaixo). EMPÍRICO: o Kotlin/Native 2.0.21 (INALTERADO) linka/
+    # cinteropa e roda os testes no simulador mesmo com Xcode 26.x — ao contrário do que
+    # §6 supunha; o KGP só emite um WARNING benigno. Subir o Kotlin (Rota B) só vira
+    # necessário se um Xcode futuro quebrar de fato a toolchain.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -61,11 +59,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # SPIKE A (Risco 1): o pin fixo 15.4 ficou insatisfazível ("Could not find Xcode
-      # version ... 15.4" — 15.4 saiu dos runners). Pinamos 'latest-stable', que resolve
-      # p/ o Xcode 16.x mais novo da imagem (macos-15) e elimina o erro de versão. Objetivo
-      # do spike: medir se o Kotlin/Native 2.0.21 ATUAL linka/cinteropa no 16.x SEM subir
-      # o Kotlin. Se o link/cinterop nativo quebrar, o Risco 1 exige o bump do Kotlin (plano B).
+      # 'latest-stable' é INTENCIONAL (pin policy decidida — ver PORTING-IOS.md §6): o pin
+      # fixo antigo (15.4) foi aposentado dos runners e quebrou o CI; latest-stable é
+      # auto-curável contra essa rotação de imagem. O Kotlin/Native 2.0.21 tolera o Xcode
+      # atual (hoje 26.x) só com um WARNING do KGP (não falha). Se um Xcode futuro quebrar
+      # de fato o link/cinterop, o job falha explícito — e ISSO é o gatilho da Rota B
+      # (subir o Kotlin). Pin major.minor explícito foi rejeitado (frágil a aposentadoria).
       - name: Fixa a versão do Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
