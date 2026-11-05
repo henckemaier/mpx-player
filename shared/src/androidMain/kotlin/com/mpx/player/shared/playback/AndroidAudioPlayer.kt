@@ -44,6 +44,7 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
     private var controller: MediaController? = null
     private var connecting: Job? = null
     private var ticker: Job? = null
+    private var volumeTicker: Job? = null // reflete mudanças externas do volume do sistema
     private var pending: Pending? = null // fila chegada antes de conectar
 
     /** Fila recebida antes de o controller conectar; aplicada em [connect]. */
@@ -66,6 +67,7 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
 
     override fun connect() {
         if (controller != null || connecting?.isActive == true) return
+        startVolumeTicker() // volume do sistema não depende do controller; reflete mudanças externas
         val component = resolveServiceComponent() ?: return // estado segue desconectado
         connecting = scope.launch {
             val token = SessionToken(appContext, component)
@@ -129,6 +131,17 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
         }
     }
 
+    /** Poll ~1s do volume do sistema (reflete mudanças externas: botões/painel). */
+    private fun startVolumeTicker() {
+        if (volumeTicker?.isActive == true) return
+        volumeTicker = scope.launch {
+            while (isActive) {
+                _volume.value = readVolume()
+                delay(1_000)
+            }
+        }
+    }
+
     override fun setQueue(items: List<PlaybackItem>, startIndex: Int, sourceLabel: String) {
         if (items.isEmpty()) return
         // Reflete a fila no estado desde já (paridade com o IosAudioPlayer), mesmo sem controller.
@@ -183,6 +196,30 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
     override fun setShuffle(enabled: Boolean) { controller?.let { it.shuffleModeEnabled = enabled } }
     override fun setRepeat(mode: RepeatMode) { controller?.let { it.repeatMode = mode.toMedia3() } }
 
+    /**
+     * Reembaralha a cauda mantendo a faixa atual tocando (movida p/ o topo, sem recriar
+     * seu item → sem reiniciar). Não toca em shuffleModeEnabled (flag [PlaybackState.shuffle]).
+     */
+    override fun shuffleQueue() {
+        val c = controller ?: return
+        val n = c.mediaItemCount
+        if (n < 2) return
+        val cur = c.currentMediaItemIndex
+        if (cur != 0) c.moveMediaItem(cur, 0) // faixa atual no topo, segue tocando
+        val order = shuffledTailPositions(n)  // embaralha as posições 1..n-1
+        val items = order.map { c.getMediaItemAt(it) }
+        c.removeMediaItems(1, n)
+        c.addMediaItems(1, items)
+    }
+
+    /** Esvazia a fila e para a reprodução (idempotente). */
+    override fun clearQueue() {
+        val c = controller ?: return
+        if (c.mediaItemCount == 0) return
+        c.clearMediaItems()
+        c.stop()
+    }
+
     private fun readVolume(): VolumeState = VolumeState(
         level = audio.getStreamVolume(AudioManager.STREAM_MUSIC),
         max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
@@ -207,6 +244,7 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
     override fun release() {
         connecting?.cancel(); connecting = null
         ticker?.cancel(); ticker = null
+        volumeTicker?.cancel(); volumeTicker = null
         controller?.let { it.removeListener(listener); it.release() }
         controller = null
         pending = null
@@ -251,3 +289,10 @@ internal fun repeatFromMedia3(mode: Int): RepeatMode = when (mode) {
 /** fraction 0..1 → nível de volume do sistema (0..max). */
 internal fun volumeLevelFor(fraction: Float, max: Int): Int =
     (fraction.coerceIn(0f, 1f) * max).toInt().coerceIn(0, max)
+
+/**
+ * Posições da cauda (1..count-1) embaralhadas, usadas pelo [AndroidAudioPlayer.shuffleQueue]
+ * (a posição 0 — faixa atual — fica fixa). Vazio se count < 2.
+ */
+internal fun shuffledTailPositions(count: Int): List<Int> =
+    if (count < 2) emptyList() else (1 until count).shuffled()

@@ -259,6 +259,51 @@ class IosAudioPlayer : AudioPlayer {
         syncState()
     }
 
+    /**
+     * Embaralha a fila ATUAL sem alterar o flag [PlaybackState.shuffle] (ação pontual
+     * "shuffle agora", distinta de ligar/desligar o modo em [setShuffle]).
+     *
+     * Reconstrói [order] com `buildPlayOrder(..., shuffle = true)` SEMPRE embaralhando
+     * (mesmo com o flag em `false`), mantendo a faixa atual no topo e preservando
+     * posição/estado de reprodução (`resumeSec`/`wasPlaying`). No-op se a fila vazia.
+     * Paridade com o Android.
+     */
+    override fun shuffleQueue() {
+        val p = player ?: return
+        if (items.size < 2) return // paridade com o Android: fila de 0/1 faixa não reembaralha (evita blip)
+        val current = order.getOrNull(pos) ?: 0  // índice ORIGINAL da faixa atual
+        val resumeSec = currentSeconds(p)         // preserva a posição da faixa atual
+        val wasPlaying = p.rate != 0f
+        // SEMPRE embaralha (independe do flag shuffle); a faixa atual vai pro topo (→0).
+        order = buildPlayOrder(items.size, current, shuffle = true)
+        pos = order.indexOf(current).coerceAtLeast(0)
+        rebuildPlayerItems()
+        if (resumeSec > 0) p.seekToTime(CMTimeMakeWithSeconds(resumeSec, TIMESCALE))
+        if (wasPlaying) p.play()
+        syncState()
+        updateNowPlaying()
+        // NÃO altera _state.shuffle (é o diferencial em relação a setShuffle).
+    }
+
+    /**
+     * Esvazia a fila: pausa, remove todos os itens do player, zera o modelo
+     * (`items`/`order`/`pos=-1`) e o pendente, reflete a fila vazia em [state]
+     * (`queueIds=[]`, `index=-1`, `isPlaying=false`) e limpa o NowPlaying da tela
+     * de bloqueio. No-op coerente se já vazia. Paridade com o Android.
+     */
+    override fun clearQueue() {
+        player?.let { p ->
+            p.pause()
+            p.removeAllItems()
+        }
+        items = emptyList()
+        order = emptyList()
+        pos = -1
+        pending = null
+        _state.update { it.copy(queueIds = emptyList(), index = -1, isPlaying = false) }
+        MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
+    }
+
     override fun setRepeat(mode: RepeatMode) {
         _state.update { it.copy(repeat = mode) }
         player?.let { applyActionAtItemEnd(it) }

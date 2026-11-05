@@ -13,6 +13,9 @@ import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.UpdateRepository
 import com.mpx.player.di.AppContainer
 import com.mpx.player.playback.PlayerController
+import com.mpx.player.shared.PlatformContext
+import com.mpx.player.shared.playback.AudioPlayer
+import com.mpx.player.shared.playback.createAudioPlayer
 
 /**
  * Injeção manual de dependências: um container por processo.
@@ -28,6 +31,9 @@ class AndroidAppContainer(val context: Context) : AppContainer {
     override val playlists = AndroidPlaylistRepository(context)
     val covers = CoverArtLoader(context)
     val player = PlayerController(context)
+    // Player do contrato comum: coexiste OCIOSO (não conectado) com o PlayerController
+    // até a fatia 4, que fará a troca. Ver KDoc de AppContainer.
+    override val audioPlayer: AudioPlayer = createAudioPlayer(PlatformContext(context))
     val downloader = Downloader(context, library, lyrics, settings)
     val updater = UpdateRepository(context)
 }

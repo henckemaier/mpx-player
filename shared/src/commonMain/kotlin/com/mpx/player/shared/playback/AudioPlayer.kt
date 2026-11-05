@@ -81,6 +81,19 @@ interface AudioPlayer {
     fun setShuffle(enabled: Boolean)
     fun setRepeat(mode: RepeatMode)
 
+    /**
+     * Reembaralha a ordem de reprodução da fila atual mantendo a faixa atual tocando
+     * (ela vira o topo da nova ordem; posição dentro da faixa preservada). NÃO altera
+     * o flag [PlaybackState.shuffle]. No-op se a fila estiver vazia.
+     */
+    fun shuffleQueue()
+
+    /**
+     * Esvazia a fila e para a reprodução: [PlaybackState] volta a queueIds vazio,
+     * index=-1, isPlaying=false. Idempotente; no-op se já estiver vazia.
+     */
+    fun clearQueue()
+
     /** fraction 0..1 → volume de mídia do sistema. */
     fun setVolume(fraction: Float)
     fun toggleMute()

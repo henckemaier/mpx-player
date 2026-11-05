@@ -45,6 +45,33 @@ class IosQueueLogicTest {
     }
 
     @Test
+    fun shuffleQueue_reorder_faixaAtualNoTopo_ePermutacaoCompleta() {
+        // shuffleQueue() reconstrói order via buildPlayOrder(size, atual, shuffle=true)
+        // SEMPRE embaralhando: a faixa atual (índice original 2) vai pro topo (→0) e a
+        // ordem continua sendo uma permutação completa, sem perdas nem repetição.
+        val atual = 2
+        val o = buildPlayOrder(6, atual, shuffle = true)
+        assertEquals(atual, o.first())            // faixa atual preservada no topo
+        assertEquals(6, o.size)
+        assertEquals((0..5).toSet(), o.toSet())    // permutação completa
+        // E o novo pos da faixa atual na order reordenada é 0 (como shuffleQueue faz).
+        assertEquals(0, o.indexOf(atual))
+    }
+
+    @Test
+    fun clearQueue_filaZerada_eInerte() {
+        // Após clearQueue(): items/order vazios e pos=-1. A lógica pura da fila trata
+        // esse estado como inerte (sem ordem e sem próximo), em qualquer modo.
+        assertEquals(emptyList(), buildPlayOrder(0, 0, shuffle = true))
+        assertEquals(emptyList(), buildPlayOrder(0, 0, shuffle = false))
+        assertNull(manualNextPos(-1, 0, RepeatMode.OFF))
+        assertNull(manualNextPos(-1, 0, RepeatMode.ALL))
+        assertNull(endAdvancePos(-1, 0, RepeatMode.OFF))
+        assertNull(endAdvancePos(-1, 0, RepeatMode.ALL))
+        assertNull(endAdvancePos(-1, 0, RepeatMode.ONE))
+    }
+
+    @Test
     fun tempo_saneado() {
         assertEquals(0.0, safeSeconds(Double.NaN))
         assertEquals(0.0, safeSeconds(Double.POSITIVE_INFINITY))
