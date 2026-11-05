@@ -42,6 +42,9 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.ktor.client.core)
+            // ViewModel multiplataforma (ViewModel + viewModelScope no commonMain).
+            // No Android mapeia p/ androidx.lifecycle.ViewModel (mesma classe do :app).
+            implementation(libs.jetbrains.lifecycle.viewmodel)
         }
         androidMain.dependencies {
             // Engine Ktor do Android (baseado em HttpURLConnection; sem trazer OkHttp).

@@ -96,7 +96,7 @@ private val AUDIO_PERMISSION =
     else Manifest.permission.READ_EXTERNAL_STORAGE
 
 @Composable
-private fun MpxRoot(container: AppContainer, settings: UserSettings) {
+private fun MpxRoot(container: AndroidAppContainer, settings: UserSettings) {
     val context = LocalContext.current
     val st = Mpx.style
     var granted by remember {

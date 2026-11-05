@@ -13,14 +13,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.mpx.player.AppContainer
+import com.mpx.player.AndroidAppContainer
 import com.mpx.player.MpxApp
 import com.mpx.player.data.LibraryState
 import com.mpx.player.data.PlaylistLogic
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
-import com.mpx.player.model.EqPresets
-import com.mpx.player.model.EqSettings
 import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
 import com.mpx.player.model.Track
@@ -49,7 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-inline fun <reified VM : ViewModel> mpxViewModel(crossinline create: (AppContainer) -> VM): VM =
+inline fun <reified VM : ViewModel> mpxViewModel(crossinline create: (AndroidAppContainer) -> VM): VM =
     viewModel(factory = viewModelFactory { initializer { create((this[APPLICATION_KEY] as MpxApp).container) } })
 
 private fun <T> kotlinx.coroutines.flow.Flow<T>.state(vm: ViewModel, initial: T): StateFlow<T> =
@@ -76,7 +74,7 @@ data class PlayerUi(
 data class TechInfo(val format: String = "---", val bitrate: String = "---", val sampleRate: String = "---", val extra: String = "")
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class PlayerViewModel(private val app: AppContainer) : ViewModel() {
+class PlayerViewModel(private val app: AndroidAppContainer) : ViewModel() {
 
     private val player = app.player
 
@@ -195,7 +193,7 @@ data class LibraryUi(
     val favoriteKeys: Set<String> = emptySet(),
 )
 
-class LibraryViewModel(private val app: AppContainer) : ViewModel() {
+class LibraryViewModel(private val app: AndroidAppContainer) : ViewModel() {
     private val filter = MutableStateFlow(LibFilter.ALBUNS)
     private val query = MutableStateFlow("")
     private val ascending = MutableStateFlow(true)
@@ -306,27 +304,7 @@ class LibraryViewModel(private val app: AppContainer) : ViewModel() {
 
 // ============================================================ EQ
 
-class EqViewModel(private val app: AppContainer) : ViewModel() {
-    val eq: StateFlow<EqSettings> = app.settings.settings.map { it.eq }.state(this, EqSettings())
-    val selectedBand = MutableStateFlow(2)
-
-    private fun edit(t: (EqSettings) -> EqSettings) {
-        viewModelScope.launch { app.settings.updateEq(t) }
-    }
-
-    fun toggleOn() = edit { it.copy(enabled = !it.enabled) }
-    fun pickPreset(name: String) = edit { it.copy(preset = name, levels = EqPresets.levelsFor(name, it.custom)) }
-    fun setBand(band: Int, level: Int) {
-        selectedBand.value = band
-        edit { e -> e.copy(preset = "CUSTOM", levels = e.levels.toMutableList().also { it[band] = level.coerceIn(0, 12) }) }
-    }
-    fun preamp(delta: Int) = edit { it.copy(preamp = (it.preamp + delta).coerceIn(0, 24)) }
-    fun toggleBass() = edit { it.copy(bassBoost = !it.bassBoost) }
-    fun toggleSurround() = edit { it.copy(surround = !it.surround) }
-    fun toggleLoudness() = edit { it.copy(loudness = !it.loudness) }
-    fun reset() = edit { it.copy(preset = "FLAT", levels = EqPresets.FLAT, preamp = 12) }
-    fun saveCustom() = edit { it.copy(custom = it.levels, preset = "CUSTOM") }
-}
+// EqViewModel foi movido para :shared/commonMain (com.mpx.player.ui.EqViewModel) — passo 6, fatia 1.
 
 // ============================================================ CONFIG
 
@@ -348,7 +326,7 @@ data class LyricsSyncUi(
     val result: String? = null,
 )
 
-class SettingsViewModel(private val app: AppContainer) : ViewModel() {
+class SettingsViewModel(private val app: AndroidAppContainer) : ViewModel() {
     private val lrcCount = MutableStateFlow(0)
     private val message = MutableStateFlow<String?>(null)
 

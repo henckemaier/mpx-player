@@ -47,7 +47,7 @@ class Downloader(
     private val context: Context,
     private val library: LibraryRepository,
     private val lyrics: LyricsRepository,
-    private val settings: SettingsRepository,
+    private val settings: AndroidSettingsRepository,
 ) {
     private val _state = MutableStateFlow(DownloadState())
     val state: StateFlow<DownloadState> = _state.asStateFlow()

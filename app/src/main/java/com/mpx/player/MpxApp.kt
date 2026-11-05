@@ -9,13 +9,18 @@ import com.mpx.player.data.LyricsRepository
 import com.mpx.player.data.OverrideRepository
 import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.PlaylistRepository
-import com.mpx.player.data.SettingsRepository
+import com.mpx.player.data.AndroidSettingsRepository
 import com.mpx.player.data.UpdateRepository
+import com.mpx.player.di.AppContainer
 import com.mpx.player.playback.PlayerController
 
-/** Injeção manual de dependências: um container por processo. */
-class AppContainer(val context: Context) {
-    val settings = SettingsRepository(context)
+/**
+ * Injeção manual de dependências: um container por processo.
+ * Implementa o [AppContainer] comum (fatia usada pelos ViewModels migrados ao
+ * `:shared`); expõe também os repos Android ainda não migrados.
+ */
+class AndroidAppContainer(val context: Context) : AppContainer {
+    override val settings = AndroidSettingsRepository(context)
     val overrides = OverrideRepository(context)
     val library = LibraryRepository(context, overrides)
     val lyrics = LyricsRepository(context)
@@ -28,11 +33,11 @@ class AppContainer(val context: Context) {
 }
 
 class MpxApp : Application() {
-    lateinit var container: AppContainer
+    lateinit var container: AndroidAppContainer
         private set
 
     override fun onCreate() {
         super.onCreate()
-        container = AppContainer(this)
+        container = AndroidAppContainer(this)
     }
 }

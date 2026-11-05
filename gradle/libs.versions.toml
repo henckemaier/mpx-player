@@ -4,6 +4,9 @@ kotlin = "2.0.21"
 coreKtx = "1.15.0"
 activityCompose = "1.9.3"
 lifecycle = "2.8.7"
+# ViewModel multiplataforma (JetBrains): targets Apple + Android (no Android mapeia
+# p/ androidx.lifecycle.ViewModel). Linha 2.8.x alinhada ao androidx 2.8.7 do :app.
+lifecycleMultiplatform = "2.8.4"
 composeBom = "2024.12.01"
 media3 = "1.5.1"
 datastore = "1.1.1"
@@ -18,6 +21,7 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+jetbrains-lifecycle-viewmodel = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel", version.ref = "lifecycleMultiplatform" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }

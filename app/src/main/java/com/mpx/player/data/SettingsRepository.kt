@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "config_sys")
 
-class SettingsRepository(private val context: Context) {
+class AndroidSettingsRepository(private val context: Context) : SettingsRepository {
 
     private object K {
         val theme = intPreferencesKey("theme")
@@ -44,6 +44,9 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
+
+    /** Parte comum do contrato [SettingsRepository] usada pelo EqViewModel (multiplataforma). */
+    override val eq: Flow<EqSettings> = settings.map { it.eq }
 
     private fun Preferences.toSettings(): UserSettings {
         val d = UserSettings()
@@ -97,16 +100,18 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLastScan(v: Long) = context.dataStore.edit { it[K.lastScan] = v }
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
 
-    suspend fun updateEq(transform: (EqSettings) -> EqSettings) = context.dataStore.edit { p ->
-        val cur = p.toSettings().eq
-        val n = transform(cur)
-        p[K.eqOn] = n.enabled
-        p[K.eqPreset] = n.preset
-        p[K.eqLevels] = n.levels.encode()
-        p[K.eqCustom] = n.custom.encode()
-        p[K.preamp] = n.preamp
-        p[K.bass] = n.bassBoost
-        p[K.surround] = n.surround
-        p[K.loud] = n.loudness
+    override suspend fun updateEq(transform: (EqSettings) -> EqSettings) {
+        context.dataStore.edit { p ->
+            val cur = p.toSettings().eq
+            val n = transform(cur)
+            p[K.eqOn] = n.enabled
+            p[K.eqPreset] = n.preset
+            p[K.eqLevels] = n.levels.encode()
+            p[K.eqCustom] = n.custom.encode()
+            p[K.preamp] = n.preamp
+            p[K.bass] = n.bassBoost
+            p[K.surround] = n.surround
+            p[K.loud] = n.loudness
+        }
     }
 }
