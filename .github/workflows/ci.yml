@@ -47,9 +47,10 @@ jobs:
     # link/cinterop nativo. Até subir o Kotlin (ver PORTING-IOS.md §6, Risco 1),
     # fixamos uma imagem que ainda traz um Xcode na faixa suportada e pinamos a
     # versão do Xcode via setup-xcode (abaixo).
-    # NOTA: macos-14 foi APOSENTADA pelo GitHub (job cancelava com "configuration
-    # 'macos-14-arm64-us-default' is not supported"); migramos p/ macos-15 MANTENDO
-    # o pin de Xcode 15.4 — ou seja, sem mexer na toolchain K/N 2.0.21.
+    # NOTA: macos-14 foi APOSENTADA pelo GitHub; migramos p/ macos-15. O pin de Xcode
+    # 15.4 ficou insatisfazível (removido de todos os runners hospedados), então o
+    # SPIKE A (Risco 1) passa a pinar um Xcode 16.x (abaixo), ainda SEM subir o
+    # Kotlin/Native 2.0.21 — para medir se a toolchain atual linka/cinteropa no 16.x.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -60,14 +61,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Pinamos Xcode 15.4: dentro da faixa suportada pelo Kotlin/Native 2.0.21 (sem
-      # o aviso que 16.1+ emite). major.minor, não patch, p/ sobreviver à rotação da
-      # imagem. Se a imagem não trouxer 15.4, ESTE passo falha explícito — sinal de
-      # que o Risco 1 (subir o Kotlin p/ um Xcode mais novo) virou obrigatório.
+      # SPIKE A (Risco 1): o pin fixo 15.4 ficou insatisfazível ("Could not find Xcode
+      # version ... 15.4" — 15.4 saiu dos runners). Pinamos 'latest-stable', que resolve
+      # p/ o Xcode 16.x mais novo da imagem (macos-15) e elimina o erro de versão. Objetivo
+      # do spike: medir se o Kotlin/Native 2.0.21 ATUAL linka/cinteropa no 16.x SEM subir
+      # o Kotlin. Se o link/cinterop nativo quebrar, o Risco 1 exige o bump do Kotlin (plano B).
       - name: Fixa a versão do Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.4'
+          xcode-version: 'latest-stable'
 
       # O :shared aplica com.android.library, então o Gradle CONFIGURA o plugin
       # Android mesmo rodando só as tasks iOS — e isso exige ANDROID_HOME +
