@@ -45,8 +45,12 @@ jobs:
     # macos-latest hoje só traz Xcode 26.x, e o Kotlin/Native 2.0.21 (out/2024)
     # foi testado só até ~Xcode 16.0 — a toolchain do 26 provavelmente quebra o
     # link/cinterop nativo. Até subir o Kotlin (ver PORTING-IOS.md §6, Risco 1),
-    # usamos uma imagem que ainda traz um Xcode na faixa suportada.
-    runs-on: macos-14
+    # fixamos uma imagem que ainda traz um Xcode na faixa suportada e pinamos a
+    # versão do Xcode via setup-xcode (abaixo).
+    # NOTA: macos-14 foi APOSENTADA pelo GitHub (job cancelava com "configuration
+    # 'macos-14-arm64-us-default' is not supported"); migramos p/ macos-15 MANTENDO
+    # o pin de Xcode 15.4 — ou seja, sem mexer na toolchain K/N 2.0.21.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
 
@@ -56,9 +60,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # A macos-14 traz hoje: 16.2, 16.1, 15.4, 15.3, 15.2, 15.1, 15.0.1 (não 16.0).
-      # 15.4 está dentro da faixa suportada pelo Kotlin/Native 2.0.21 (sem o aviso
-      # que 16.1+ emite). major.minor, não patch, p/ sobreviver à rotação da imagem.
+      # Pinamos Xcode 15.4: dentro da faixa suportada pelo Kotlin/Native 2.0.21 (sem
+      # o aviso que 16.1+ emite). major.minor, não patch, p/ sobreviver à rotação da
+      # imagem. Se a imagem não trouxer 15.4, ESTE passo falha explícito — sinal de
+      # que o Risco 1 (subir o Kotlin p/ um Xcode mais novo) virou obrigatório.
       - name: Fixa a versão do Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
