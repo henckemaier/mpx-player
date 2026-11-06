@@ -97,13 +97,92 @@ jobs:
       # iosX64, que exigiria Rosetta). iosSimulatorArm64Test compila o commonTest
       # para o simulador E roda os testes num simulador bootado — já exercita o
       # simulador, não só linka o framework. Em seguida monta o XCFramework.
-      - name: Testa no simulador arm64 + monta XCFramework
+      # 1) Kotlin: roda os testes no simulador arm64 (prova o lado Kotlin do :shared).
+      # 2) Linka o framework estático `Shared` p/ iosSimulatorArm64 — é o que o host
+      #    iosApp/ consome via FRAMEWORK_SEARCH_PATHS (shared/build/bin/iosSimulatorArm64/
+      #    debugFramework/Shared.framework). Por isso roda ANTES do xcodebuild.
+      - name: Testa no simulador arm64 + linka o framework Shared
         run: |
           chmod +x gradlew
-          ./gradlew :shared:iosSimulatorArm64Test :shared:assembleSharedDebugXCFramework --no-daemon
+          ./gradlew :shared:iosSimulatorArm64Test :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
 
-      # TODO(quando existir iosApp/): validar o HOST SwiftUI + render do Compose
-      # Multiplatform com xcodebuild + boot de simulador (compilar o framework não
-      # prova que o app roda). Algo como:
-      #   xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
-      #     -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 15' build
+      # Builda o host SwiftUI (iosApp/) p/ o simulador. Compilar o framework não prova
+      # que o app roda — este passo linka o CMP no app e valida o pipeline host→Compose.
+      # ENABLE_DEBUG_DYLIB=NO: no Xcode 16+ o build Debug gera um "debug dylib" cujo
+      # executável principal é um stub (___debug_blank_executor_main) que só roda o app
+      # sob lldb/Xcode. Lançado standalone via `simctl launch`, o stub sai sem rodar nada
+      # → app fica INSTALADO mas NÃO rodando (screenshot pegava a HOME). Com =NO o
+      # executável carrega o código real e o `simctl launch` roda o app de fato.
+      - name: Build do host iosApp (simulador)
+        run: |
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+            -sdk iphonesimulator -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO ENABLE_DEBUG_DYLIB=NO build
+
+      # FALLBACK de Compose Resources (por quê: o host Xcode é feito à mão e NÃO roda a
+      # task de sync do plugin CMP — essa via oficial, via Build Phase chamando o Gradle
+      # [embedAndSignAppleFrameworkForXcode], precisa de um Mac p/ autorar/validar, e um
+      # Run Script quebrado derrubaria o build no Mac; como o gate roda no Windows+CI e
+      # eu não valido no Mac, injeto aqui de forma determinística). O leitor do CMP no iOS
+      # procura em <app>.app/compose-resources/composeResources/<packageOfResClass>/<cat>/<arq>.
+      # Reproduzimos esse layout a partir do source (só há a fonte VT323, copiada verbatim).
+      # packageOfResClass = com.mpx.player.resources.
+      - name: Injeta as Compose Resources no app bundle (iOS)
+        run: |
+          APP="dd/Build/Products/Debug-iphonesimulator/iosApp.app"
+          DEST="$APP/compose-resources/composeResources/com.mpx.player.resources"
+          mkdir -p "$DEST"
+          cp -R shared/src/commonMain/composeResources/. "$DEST/"
+          echo "=== compose-resources no bundle ==="
+          find "$APP/compose-resources" -type f
+
+      - name: Sobe simulador, instala e captura screenshot (iOS)
+        run: |
+          mkdir -p ios-diag
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "Simulador UDID=$UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b || true   # espera o boot completar antes de instalar/lançar
+          xcrun simctl install "$UDID" dd/Build/Products/Debug-iphonesimulator/iosApp.app
+          # launch PADRÃO (foreground): traz o app p/ frente no SpringBoard.
+          xcrun simctl launch "$UDID" com.mpx.player.iosApp | tee ios-diag/launch.txt
+          sleep 8   # deixa o 1o frame + carga da fonte assentarem
+          xcrun simctl io "$UDID" screenshot crt-ios.png
+
+      - name: Upload do screenshot iOS (smoke)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke
+          path: crt-ios.png
+          if-no-files-found: warn
+
+      # Diagnóstico: se o screenshot vier a HOME (suspeita de crash — simctl launch
+      # retorna 0 mesmo com crash), prova a causa: estado do app + crash reports + syslog.
+      - name: Diagnóstico iOS (estado do app + crash reports)
+        if: always()
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "UDID=$UDID"
+          mkdir -p ios-diag
+          echo "=== listapps (iosApp) ==="; xcrun simctl listapps "$UDID" | grep -i mpx || true
+          echo "=== running? ==="; xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i mpx || echo "NAO esta rodando"
+          echo "=== crash reports ==="
+          CR="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/DiagnosticReports"
+          cp "$CR"/*.ips ios-diag/ 2>/dev/null || true
+          cp "$CR"/*.crash ios-diag/ 2>/dev/null || true
+          ls -la ios-diag || true
+          for f in ios-diag/*.ips ios-diag/*.crash; do [ -e "$f" ] && { echo "----- $f -----"; cat "$f"; }; done
+          echo "=== syslog (iosApp/kotlin/compose/exception) ==="
+          xcrun simctl spawn "$UDID" log show --last 3m 2>/dev/null | grep -iE "iosApp|kotlin|compose|mpx|Fatal|Exception|Uncaught|Resource|font" | tail -200 > ios-diag/syslog.txt || true
+          cat ios-diag/syslog.txt || true
+
+      - name: Upload diagnóstico iOS
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-diag
+          path: ios-diag
+          if-no-files-found: warn

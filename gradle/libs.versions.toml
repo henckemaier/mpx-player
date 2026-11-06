@@ -8,6 +8,11 @@ lifecycle = "2.8.7"
 # p/ androidx.lifecycle.ViewModel). Linha 2.8.x alinhada ao androidx 2.8.7 do :app.
 lifecycleMultiplatform = "2.8.4"
 composeBom = "2024.12.01"
+# Compose Multiplatform. CRAVADO 1.7.1: a linha 1.7.x e a faixa p/ Kotlin 2.0.21 (CMP 1.8+
+# exige Kotlin 2.1 e esta PROIBIDO). O compose-compiler == Kotlin (plugin kotlin-compose).
+# Aplicado no :shared (androidTarget + iosSimulatorArm64); androidx.compose 1.7.x converge
+# com o BOM 2024.12.01 (1.7.6) do :app na resolucao (mesmo minor).
+composeMultiplatform = "1.7.1"
 media3 = "1.5.1"
 datastore = "1.1.1"
 coroutines = "1.9.0"
@@ -28,6 +33,8 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+# Compose Multiplatform resources: fonte VT323 como Res.font.* no commonMain do :shared.
+compose-components-resources = { group = "org.jetbrains.compose.components", name = "components-resources", version.ref = "composeMultiplatform" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
@@ -48,3 +55,5 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+# Compose Multiplatform. Aplicado no :shared junto do kotlin-compose (== Kotlin 2.0.21).
+jetbrains-compose = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

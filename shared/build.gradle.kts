@@ -5,6 +5,11 @@ import org.jetbrains.kotlin.konan.target.HostManager
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
+    // Compose Multiplatform 1.7.1 + compose-compiler (== Kotlin 2.0.21). Habilita o Compose
+    // no :shared (androidTarget + alvos iOS) e a UI comum (SmokeScreen) consumida pelo :app
+    // e pelo host iOS. O jetbrains-compose detecta Kotlin 2.0 e delega o compiler ao kotlin-compose.
+    alias(libs.plugins.jetbrains.compose)
+    alias(libs.plugins.kotlin.compose)
 }
 
 kotlin {
@@ -45,6 +50,12 @@ kotlin {
             // ViewModel multiplataforma (ViewModel + viewModelScope no commonMain).
             // No Android mapeia p/ androidx.lifecycle.ViewModel (mesma classe do :app).
             implementation(libs.jetbrains.lifecycle.viewmodel)
+            // Compose Multiplatform: UI comum (SmokeScreen) + fontes como Res.font.*.
+            // Os acessores `compose.*` vêm do plugin jetbrains-compose.
+            implementation(compose.runtime)
+            implementation(compose.foundation)
+            implementation(compose.ui)
+            implementation(libs.compose.components.resources)
         }
         androidMain.dependencies {
             // Engine Ktor do Android (baseado em HttpURLConnection; sem trazer OkHttp).
@@ -69,6 +80,13 @@ kotlin {
             }
         }
     }
+}
+
+// Pacote fixo p/ o acessor gerado das Compose Resources (import previsível:
+// com.mpx.player.resources.Res). O leitor de resources do CMP no iOS procura em
+// <app>.app/compose-resources/composeResources/com.mpx.player.resources/<cat>/<arq>.
+compose.resources {
+    packageOfResClass = "com.mpx.player.resources"
 }
 
 android {
