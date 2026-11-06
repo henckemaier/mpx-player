@@ -189,15 +189,12 @@ jobs:
           xcrun simctl boot "$UDID" 2>/dev/null || true
           xcrun simctl bootstatus "$UDID" -b || true   # espera o boot completar antes de instalar/lançar
           xcrun simctl install "$UDID" dd/Build/Products/Debug-iphonesimulator/iosApp.app
-          # --console-pty streama stdout/stderr do app em background -> pega "Uncaught Kotlin
-          # exception" (ex.: resource/fonte nao encontrada) se crashar na largada. Rodando em
-          # background pq um app SwiftUI nao sai sozinho; matamos depois do screenshot.
-          xcrun simctl launch --console-pty "$UDID" com.mpx.player.spike.iosApp > ios-diag/applog.txt 2>&1 &
-          LPID=$!
-          sleep 10   # deixa 1o frame + carga das fontes assentarem
+          # launch PADRAO (foreground): traz o app p/ frente no SpringBoard. Com as Compose
+          # Resources ja no bundle o app NAO crasha mais; o --console-pty em background da
+          # rodada de diagnostico NAO foregroundava o app (screenshot pegava a home).
+          xcrun simctl launch "$UDID" com.mpx.player.spike.iosApp | tee ios-diag/launch.txt
+          sleep 8   # deixa o 1o frame + carga das fontes assentarem
           xcrun simctl io "$UDID" screenshot crt-ios.png
-          kill "$LPID" 2>/dev/null || true
-          echo "=== app log (stdout/stderr) ==="; cat ios-diag/applog.txt || true
 
       - name: Upload do screenshot iOS
         if: always()
