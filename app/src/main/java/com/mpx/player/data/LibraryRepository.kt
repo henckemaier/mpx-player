@@ -4,8 +4,6 @@ import android.content.ContentUris
 import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
-import com.mpx.player.model.Album
-import com.mpx.player.model.Artist
 import com.mpx.player.model.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +50,7 @@ class AndroidLibraryRepository(
     }
 
     /** Re-escaneia no escopo do repositório (sobrevive à troca de tela/aba). */
-    fun rescan() = scope.launch { scan() }
+    override fun rescan() { scope.launch { scan() } }
 
     @Synchronized
     private fun rebuild() {
@@ -61,17 +59,9 @@ class AndroidLibraryRepository(
             val o = ov[t.key] ?: return@map t
             t.copy(title = o.title ?: t.title, coverOverride = o.cover ?: t.coverOverride)
         }
-        val albums = tracks.groupBy { it.albumId }.map { (id, list) ->
-            Album(
-                id = id,
-                title = list.first().album,
-                artist = list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key,
-                tracks = list.sortedWith(compareBy({ it.trackNumber }, { it.displayName })),
-            )
-        }.sortedBy { it.title.uppercase() }
-        val artists = tracks.groupBy { it.artist }.map { (name, list) ->
-            Artist(name, list.sortedWith(compareBy({ it.album }, { it.trackNumber })))
-        }.sortedBy { it.name.uppercase() }
+        // Agrupamento puro (comum a Android/iOS) em :shared — só os overrides + o set do
+        // _state ficam aqui, no Android.
+        val (albums, artists) = buildAlbumsAndArtists(tracks)
         _state.value = LibraryState(tracks, albums, artists, scanning = scanningFlag, scanned = scanned, newSinceLastScan = newCount)
     }
 
