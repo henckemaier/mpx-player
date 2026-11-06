@@ -179,6 +179,35 @@ jobs:
           path: crt-ios.png
           if-no-files-found: warn
 
+      # DIAGNÓSTICO (Fase 3): o crt-ios.png veio a HOME → suspeita de CRASH no launch
+      # (simctl launch retorna 0 mesmo com crash). Prova a causa: estado do app + crash
+      # reports (.ips/.crash) + recorte do syslog. NÃO aplica fix ainda.
+      - name: Diagnóstico iOS (estado do app + crash reports)
+        if: always()
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "UDID=$UDID"
+          mkdir -p ios-diag
+          echo "=== listapps (spike) ==="; xcrun simctl listapps "$UDID" | grep -i spike || true
+          echo "=== running? ==="; xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i spike || echo "NAO esta rodando"
+          echo "=== crash reports ==="
+          CR="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/DiagnosticReports"
+          cp "$CR"/*.ips ios-diag/ 2>/dev/null || true
+          cp "$CR"/*.crash ios-diag/ 2>/dev/null || true
+          ls -la ios-diag || true
+          for f in ios-diag/*.ips ios-diag/*.crash; do [ -e "$f" ] && { echo "----- $f -----"; cat "$f"; }; done
+          echo "=== syslog (iosApp/kotlin/compose/exception) ==="
+          xcrun simctl spawn "$UDID" log show --last 3m 2>/dev/null | grep -iE "iosApp|kotlin|compose|spike|Fatal|Exception|Uncaught|Resource|font" | tail -200 > ios-diag/syslog.txt || true
+          cat ios-diag/syslog.txt || true
+
+      - name: Upload diagnóstico iOS
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-diag
+          path: ios-diag
+          if-no-files-found: warn
+
   android-shot:
     name: Android spike (screenshot p/ A/B)
     runs-on: ubuntu-latest
