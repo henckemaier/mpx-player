@@ -25,6 +25,10 @@ data class PlaybackItem(
 /** Estado observável do player, espelhando o que a UI precisa. */
 data class PlaybackState(
     val connected: Boolean = false,
+    /**
+     * Ids na ORDEM DE REPRODUÇÃO (a mesma em que as faixas vão tocar); [index] aponta
+     * a posição atual nessa ordem. Convenção comum às duas plataformas.
+     */
     val queueIds: List<String> = emptyList(),
     val index: Int = -1,
     val isPlaying: Boolean = false,
@@ -93,6 +97,14 @@ interface AudioPlayer {
      * index=-1, isPlaying=false. Idempotente; no-op se já estiver vazia.
      */
     fun clearQueue()
+
+    /**
+     * Esvazia a fila MANTENDO a faixa atual tocando: remove tudo antes e depois da
+     * faixa atual, sem reiniciar nem parar a reprodução dela. Após isto a fila tem no
+     * máximo 1 item (a atual), index = 0. Paridade com o antigo PlayerController.clearQueue
+     * do :app. No-op se a fila já tiver 0/1 item. Distinto de [clearQueue] (esvazia E para).
+     */
+    fun clearUpcoming()
 
     /** fraction 0..1 → volume de mídia do sistema. */
     fun setVolume(fraction: Float)

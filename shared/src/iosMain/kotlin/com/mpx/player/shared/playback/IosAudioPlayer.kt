@@ -233,9 +233,11 @@ class IosAudioPlayer : AudioPlayer {
 
     override fun seekToIndex(index: Int) {
         val p = player ?: return
-        val newPos = order.indexOf(index)
-        if (newPos < 0) return
-        pos = newPos
+        // debt1: [index] é a posição na ORDEM DE REPRODUÇÃO (= pos), o mesmo espaço do
+        // queueIds exposto e do Android (c.seekTo(index, 0)). Antes era o índice ORIGINAL
+        // (order.indexOf(index)) — ficaria inconsistente com o novo queueIds/index.
+        if (index !in order.indices) return
+        pos = index
         rebuildPlayerItems()
         p.play() // selecionar faixa implica tocar (ação explícita do usuário)
         syncState()
@@ -302,6 +304,33 @@ class IosAudioPlayer : AudioPlayer {
         pending = null
         _state.update { it.copy(queueIds = emptyList(), index = -1, isPlaying = false) }
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
+    }
+
+    /**
+     * Esvazia a fila MANTENDO a faixa atual TOCANDO (não reinicia, não para): remove
+     * do [AVQueuePlayer] todos os itens à frente do atual e colapsa o modelo para só a
+     * faixa atual (`items=[atual]`, `order=[0]`, `pos=0`). No-op se a fila tem ≤1 item.
+     *
+     * NÃO chama [rebuildPlayerItems]: reinserir o item atual o recriaria e reiniciaria a
+     * reprodução. O `AVQueuePlayer` guarda `[atual, ...próximos]`, então basta remover
+     * todos menos o primeiro. Paridade com o `AndroidAudioPlayer` (remove a cauda sem
+     * recriar/reiniciar a faixa atual).
+     */
+    override fun clearUpcoming() {
+        val p = player ?: return
+        if (items.size <= 1) return
+        // Índice ORIGINAL da faixa atual → o PlaybackItem que será mantido.
+        val current = items.getOrNull(order.getOrNull(pos) ?: -1) ?: return
+        // Remove do player tudo à frente do atual (índice 0 = currentItem), sem reconstruir.
+        for (item in p.items().drop(1)) {
+            (item as? AVPlayerItem)?.let { p.removeItem(it) }
+        }
+        // Colapsa o modelo: só a faixa atual permanece (pos=0).
+        items = listOf(current)
+        order = listOf(0)
+        pos = 0
+        syncState()       // debt1: emite index=0 e queueIds=[id da atual]; isPlaying preservado
+        updateNowPlaying()
     }
 
     override fun setRepeat(mode: RepeatMode) {
@@ -433,7 +462,11 @@ class IosAudioPlayer : AudioPlayer {
         val p = player ?: return
         _state.update {
             it.copy(
-                index = order.getOrNull(pos) ?: -1,
+                // debt1: queueIds/index na ORDEM DE REPRODUÇÃO (alinha com o Android, que
+                // expõe c.getMediaItemAt(i).mediaId + currentMediaItemIndex). [pos] é a
+                // posição na [order], então queueIds[index] == faixa atual (currentId ok).
+                queueIds = queueIdsInPlayOrder(items, order),
+                index = pos,
                 isPlaying = p.rate != 0f,
                 positionMs = secondsToMs(currentSeconds(p)),
                 durationMs = secondsToMs(durationSeconds(p)),
@@ -454,6 +487,15 @@ class IosAudioPlayer : AudioPlayer {
 }
 
 // --- Lógica pura da fila (sem AVFoundation) — testável no iosSimulatorArm64Test ---
+
+/**
+ * IDs da fila na ORDEM DE REPRODUÇÃO (debt1 — alinha o iOS ao Android, que expõe o
+ * `queueIds` na ordem do player). [order] mapeia posição de reprodução → índice
+ * original em [items]; o resultado é a lista de ids já reordenada. Entradas fora de
+ * faixa são ignoradas (robustez), então o tamanho acompanha a [order] válida.
+ */
+internal fun queueIdsInPlayOrder(items: List<PlaybackItem>, order: List<Int>): List<String> =
+    order.mapNotNull { items.getOrNull(it)?.id }
 
 /** Ordem de reprodução: identidade, ou embaralhada com [start] no topo. */
 internal fun buildPlayOrder(size: Int, start: Int, shuffle: Boolean): List<Int> {

@@ -72,6 +72,33 @@ class IosQueueLogicTest {
     }
 
     @Test
+    fun queueIds_emOrdemDeReproducao_indexPosApontaAtual() {
+        // debt1: após shuffleQueue a order fica embaralhada com a faixa atual no topo.
+        // queueIds deve sair NA ORDEM DE REPRODUÇÃO e index=pos apontar a faixa atual.
+        val items = pbItems("a", "b", "c", "d", "e")
+        val atual = 2 // "c" (índice original)
+        val order = buildPlayOrder(items.size, atual, shuffle = true) // "c" no topo
+        val ids = queueIdsInPlayOrder(items, order)
+
+        assertEquals(order.map { items[it].id }, ids)         // ids na ordem de reprodução
+        assertEquals(items.map { it.id }.toSet(), ids.toSet()) // sem perdas/repetição
+        val pos = 0 // shuffleQueue deixa a atual no topo da order
+        assertEquals("c", ids[pos])                            // index=pos aponta a atual
+    }
+
+    @Test
+    fun clearUpcoming_colapsaParaAtual_index0() {
+        // debt1 + clearUpcoming: o modelo colapsa para só a faixa atual
+        // (items=[atual], order=[0], pos=0) → queueIds=[id da atual], index=0.
+        val atual = pbItem("cur")
+        val order = listOf(0)
+        val ids = queueIdsInPlayOrder(listOf(atual), order)
+        assertEquals(listOf("cur"), ids)
+        val pos = 0
+        assertEquals("cur", ids[pos]) // index=0 segue apontando a atual
+    }
+
+    @Test
     fun tempo_saneado() {
         assertEquals(0.0, safeSeconds(Double.NaN))
         assertEquals(0.0, safeSeconds(Double.POSITIVE_INFINITY))
@@ -80,4 +107,11 @@ class IosQueueLogicTest {
         assertEquals(1500L, secondsToMs(1.5))
         assertEquals(0L, secondsToMs(Double.NaN))
     }
+
+    // --- Helpers de teste ---
+
+    private fun pbItem(id: String): PlaybackItem =
+        PlaybackItem(id = id, uri = "file:///$id", title = id, artist = "art", album = "alb")
+
+    private fun pbItems(vararg ids: String): List<PlaybackItem> = ids.map { pbItem(it) }
 }

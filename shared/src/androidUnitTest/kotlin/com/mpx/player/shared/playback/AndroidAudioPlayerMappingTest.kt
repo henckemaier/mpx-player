@@ -39,4 +39,19 @@ class AndroidAudioPlayerMappingTest {
         assertEquals(5, tail.size)                          // sem perdas nem repetição
         assertTrue(tail.none { it == 0 })                   // nunca mexe no topo (faixa atual)
     }
+
+    @Test
+    fun clearUpcoming_removeDepoisEntaoAntes_mantendoAtual() {
+        // fila de 0/1 item: nada a remover (no-op)
+        assertEquals(emptyList(), clearUpcomingRemovals(0, 0))
+        assertEquals(emptyList(), clearUpcomingRemovals(1, 0))
+        // atual no meio (count=5, cur=2): remove a cauda (3..5) ANTES do começo (0..2)
+        assertEquals(listOf(3 to 5, 0 to 2), clearUpcomingRemovals(5, 2))
+        // atual no topo (cur=0): só a cauda
+        assertEquals(listOf(1 to 4), clearUpcomingRemovals(4, 0))
+        // atual no fim (cur=last): só o começo
+        assertEquals(listOf(0 to 3), clearUpcomingRemovals(4, 3))
+        // index fora de faixa é saneado
+        assertEquals(listOf(0 to 3), clearUpcomingRemovals(4, 9))
+    }
 }

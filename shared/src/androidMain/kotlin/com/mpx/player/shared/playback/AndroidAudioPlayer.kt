@@ -220,6 +220,15 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
         c.stop()
     }
 
+    /** Esvazia a fila mantendo a faixa atual tocando (remove depois e antes; sem parar). */
+    override fun clearUpcoming() {
+        val c = controller ?: return
+        // Remove a cauda ANTES do começo (remover o começo não desloca índices já contados).
+        for ((from, to) in clearUpcomingRemovals(c.mediaItemCount, c.currentMediaItemIndex)) {
+            c.removeMediaItems(from, to)
+        }
+    }
+
     private fun readVolume(): VolumeState = VolumeState(
         level = audio.getStreamVolume(AudioManager.STREAM_MUSIC),
         max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
@@ -296,3 +305,17 @@ internal fun volumeLevelFor(fraction: Float, max: Int): Int =
  */
 internal fun shuffledTailPositions(count: Int): List<Int> =
     if (count < 2) emptyList() else (1 until count).shuffled()
+
+/**
+ * Remoções (from, toExclusive) para o clearUpcoming, na ordem de aplicação: primeiro a
+ * cauda [current+1, count) e depois o começo [0, current) — remover o começo por último
+ * não desloca índices ainda não processados. Vazio se count <= 1 (nada a remover).
+ */
+internal fun clearUpcomingRemovals(count: Int, current: Int): List<Pair<Int, Int>> {
+    if (count <= 1) return emptyList()
+    val cur = current.coerceIn(0, count - 1)
+    val out = ArrayList<Pair<Int, Int>>(2)
+    if (cur + 1 < count) out += (cur + 1) to count // depois da atual
+    if (cur > 0) out += 0 to cur                    // antes da atual
+    return out
+}
