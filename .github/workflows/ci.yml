@@ -167,6 +167,20 @@ jobs:
             -derivedDataPath dd \
             CODE_SIGNING_ALLOWED=NO ENABLE_DEBUG_DYLIB=NO build
 
+      # FIX (Fase 3): MissingResourceException — o host Xcode feito à mão linka o CÓDIGO do
+      # framework mas NÃO copia as Compose Resources pro bundle. O leitor do CMP no iOS
+      # procura em <app>.app/compose-resources/composeResources/<packageOfResClass>/<cat>/<arq>.
+      # Reproduzimos EXATAMENTE esse layout a partir do source (só há fontes, copiadas
+      # verbatim pelo plugin) ANTES do install. packageOfResClass=com.mpx.player.spike.resources.
+      - name: Injeta as Compose Resources no app bundle (iOS)
+        run: |
+          APP="dd/Build/Products/Debug-iphonesimulator/iosApp.app"
+          DEST="$APP/compose-resources/composeResources/com.mpx.player.spike.resources"
+          mkdir -p "$DEST"
+          cp -R composeAppSpike/src/commonMain/composeResources/. "$DEST/"
+          echo "=== compose-resources no bundle ==="
+          find "$APP/compose-resources" -type f
+
       - name: Sobe simulador, instala e captura screenshot (iOS)
         run: |
           mkdir -p ios-diag
