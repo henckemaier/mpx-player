@@ -55,6 +55,10 @@ maestri role create "Dev MPX" "Voce e o desenvolvedor do MPX Player: app Android
 ```
 
 ```bash
+maestri role create "Lider Dev MPX" "Voce e o LIDER de desenvolvimento (gestor) do MPX Player (Kotlin/Compose/Media3, pacote com.mpx.player; em porte para iOS via KMP, modulo :shared). RECEBE tasks do coordenador (Maestro) e as DIVIDE em sub-tarefas para os devs Forja e Martelo (use 'maestri ask Forja ...', 'maestri ask Martelo ...', ou 'maestri ask --batch' para paralelizar). Coordena, integra em commits atomicos, aciona Lente (revisao) e Crivo (validacao), incorpora o retorno e REPORTA ao Maestro. Branch feat/ios-port; NUNCA toque na main nem comite keystore. REGRA ANTI-DEADLOCK (ask-back): depois de delegar, NUNCA fique em espera passiva achando que o relatorio do dev te acorda sozinho — PUXE o resultado com 'maestri check Forja'/'maestri check Martelo' ate ver o entregavel e so entao prossiga; so considere a delegacao resolvida apos LER via check o que o dev produziu."
+```
+
+```bash
 maestri role create "Validacao MPX" "Voce valida o MPX Player (Android, Kotlin/Compose/Media3). Para cada mudanca: rode ./gradlew test e ./gradlew :app:assembleDebug; quando fizer sentido, instale no aparelho Android conectado via adb (um Realme arm64; o adb fica em C:/Users/eduhe/AppData/Local/Android/Sdk/platform-tools/adb.exe) com 'adb install -r' e confira a UI por screencap. Reporte objetivamente: passou/falhou + a saida relevante. NAO implemente, so valida. Rode maestri list para ver a equipe."
 ```
 
@@ -83,13 +87,16 @@ maestri recruit "Prensa" --role "Release MPX"
 
 | Agente (codinome) | Papel | O que faz |
 |---|---|---|
-| **Forja** | Desenvolvedor | Implementa features/correções, compila (`assembleDebug`) e roda testes |
+| **Bigorna** | Líder Dev (gestor) | Recebe a task do coordenador e a divide entre Forja e Martelo; coordena, integra, aciona Lente/Crivo e reporta ao coordenador |
+| **Forja** | Desenvolvedor | Implementa features/correções, compila (`assembleDebug`) e roda testes; reporta ao Bigorna |
+| **Martelo** | Desenvolvedor (2º) | Dev adicional (ex.: lado iOS); recebe sub-tarefas do Bigorna e reporta a ele |
 | **Crivo** | Validação / QA | `./gradlew test` + build, instala no aparelho via adb, confere a UI por screenshot |
 | **Lente** | Revisão | Revisa o diff (correção/segurança/estilo) — só aponta, não edita |
 | **Prensa** *(sob demanda)* | Release | Decide a versão (SemVer), atualiza o CHANGELOG, sobe `versionName`/`versionCode`, commita e — após sua confirmação — pusha e confere a publicação |
 
-O **coordenador** é o agente do terminal que você abriu no Maestri. Dá para enxugar para 2 agentes
-(Dev + Validação) se quiser gastar menos slots/sessões.
+O **coordenador** é o agente do terminal que você abriu no Maestri. A cadeia é
+**coordenador → Bigorna (líder) → Forja/Martelo**, com Lente/Crivo acionados pelo Bigorna. Dá para
+enxugar para 2 agentes (Dev + Validação) se quiser gastar menos slots/sessões.
 
 ## 5. Delegar
 
@@ -116,3 +123,35 @@ maestri recruit "Forja" --floor "Experimento" --role "Dev MPX"
 # quando pronto e commitado, do chao:
 maestri floor land "Experimento"
 ```
+
+## 7. Padrão ask-back: evite o deadlock do gestor
+
+O padrão **ask-back** (o agente, ao terminar, roda `maestri ask "<quem delegou>" "<resultado>"`
+para que a resposta chegue como um novo prompt) tem um risco conhecido quando um **gestor** delega e
+depois fica **passivo**.
+
+**O que aconteceu (2026-11-05):** o Bigorna delegou uma sub-tarefa ao Forja, recebeu o aviso padrão
+*"respondeu diretamente / chega como a próxima mensagem"* e encerrou o turno achando que ia ser
+acordado quando o relatório chegasse. O Forja terminou e deixou o relatório **no próprio terminal**,
+mas isso **não reativou o Bigorna** — que ficou ocioso indefinidamente esperando um gatilho que não
+veio. Deadlock de espera (não era bug de código nem processo pendurado consumindo recursos).
+
+**Regra para o gestor (já embutida na role `Lider Dev MPX`):** depois de delegar, **nunca** espere
+passivo. **Puxe** o resultado ativamente:
+
+```bash
+maestri check "Forja"      # lê o terminal atual do dev, sem reenviar prompt
+maestri check "Martelo"
+```
+
+Só considere uma delegação resolvida **depois de ler, via `check`, o entregável real** do dev; então
+prossiga a revisão/integração. Se um dev sinalizou que terminou mas o conteúdo não chegou, dê `check`
+e siga.
+
+**Regra para o dev (role `Dev MPX`):** ao concluir, **envie de fato** o resumo com
+`maestri ask "Bigorna" "..."` (não basta deixar no seu terminal), incluindo o essencial do entregável
+(arquivos tocados, decisões, flags, resultado dos gates), para o gestor conseguir revisar mesmo que só
+leia via `check`.
+
+> Em uma frase: **quem delega puxa** (`check`), **quem executa entrega** (`ask`). Nunca dependa só de
+> o prompt chegar sozinho.
