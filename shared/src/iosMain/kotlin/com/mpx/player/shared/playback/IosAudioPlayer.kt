@@ -1,6 +1,7 @@
 package com.mpx.player.shared.playback
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.convert
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,15 +10,21 @@ import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFAudio.outputVolume
 import platform.AVFAudio.setActive
+import platform.AVFoundation.AVMetadataCommonKeyArtwork
+import platform.AVFoundation.AVMetadataItem
 import platform.AVFoundation.AVPlayerActionAtItemEndAdvance
 import platform.AVFoundation.AVPlayerActionAtItemEndNone
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVQueuePlayer
+import platform.AVFoundation.AVURLAsset
 import platform.AVFoundation.actionAtItemEnd
 import platform.AVFoundation.addPeriodicTimeObserverForInterval
+import platform.AVFoundation.commonKey
+import platform.AVFoundation.commonMetadata
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
+import platform.AVFoundation.dataValue
 import platform.AVFoundation.duration
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
@@ -30,8 +37,10 @@ import platform.Foundation.NSNotification
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
+import platform.MediaPlayer.MPMediaItemArtwork
 import platform.MediaPlayer.MPMediaItemPropertyAlbumTitle
 import platform.MediaPlayer.MPMediaItemPropertyArtist
+import platform.MediaPlayer.MPMediaItemPropertyArtwork
 import platform.MediaPlayer.MPMediaItemPropertyPlaybackDuration
 import platform.MediaPlayer.MPMediaItemPropertyTitle
 import platform.MediaPlayer.MPNowPlayingInfoCenter
@@ -39,6 +48,11 @@ import platform.MediaPlayer.MPNowPlayingInfoPropertyElapsedPlaybackTime
 import platform.MediaPlayer.MPNowPlayingInfoPropertyPlaybackRate
 import platform.MediaPlayer.MPRemoteCommandCenter
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
+import platform.UIKit.UIImage
+import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_global_queue
+import platform.darwin.dispatch_get_main_queue
 
 /**
  * Player iOS sobre AVFoundation, implementando o contrato comum [AudioPlayer] com
@@ -50,7 +64,15 @@ import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
  *  - shuffle/repetição vivem na camada de fila (o `AVQueuePlayer` não os expõe),
  *    espelhando a lógica do Android;
  *  - `positionMs`/`durationMs` alimentados por um observador periódico de tempo;
- *  - tela de bloqueio via `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`.
+ *  - tela de bloqueio via `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`, incluindo
+ *    a CAPA (`MPMediaItemPropertyArtwork`): carregada de forma assíncrona a partir de
+ *    `PlaybackItem.artworkUri` (capa custom em arquivo ou arte embutida do áudio) e
+ *    mesclada no NowPlaying com anti-race (ver [loadArtworkAsync]).
+ *
+ * LIMITE de validação (device-TODO): VER a capa no lock screen/Control Center real
+ * depende de device — o NowPlaying do simulador headless é não-confiável p/ screenshot.
+ * O CI valida compilação/link do `iosMain` + a lógica pura ([iosArtworkUri]/
+ * [shouldApplyArtwork]) em `iosTest`.
  *
  * Threading: use na thread principal (AVFoundation e `MPNowPlayingInfoCenter`
  * exigem a main thread; os callbacks — observador de tempo, fim de faixa e
@@ -440,8 +462,6 @@ class IosAudioPlayer : AudioPlayer {
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
     }
 
-    // TODO(iOS): capa na tela de bloqueio — MPMediaItemPropertyArtwork a partir de
-    // PlaybackItem.artworkUri (carregar UIImage async → MPMediaItemArtwork). Passo seguinte.
     private fun updateNowPlaying() {
         val p = player ?: return
         val item = items.getOrNull(order.getOrNull(pos) ?: -1) ?: return
@@ -453,7 +473,58 @@ class IosAudioPlayer : AudioPlayer {
             MPNowPlayingInfoPropertyElapsedPlaybackTime to currentSeconds(p),
             MPNowPlayingInfoPropertyPlaybackRate to p.rate,
         )
+        // Publica os campos textuais imediatamente (a capa chega depois, assíncrona).
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = info
+        loadArtworkAsync(item)
+    }
+
+    /**
+     * Carrega a capa de [item] FORA da main (AVFoundation/UIImage podem bloquear) e, na
+     * MAIN, MESCLA [MPMediaItemPropertyArtwork] no dicionário atual do NowPlaying — sem
+     * derrubar os campos textuais. Anti-race: captura o id da faixa no início e só aplica
+     * se ela ainda for a atual ao concluir (capa velha não sobrescreve a nova). Falha de
+     * load degrada graciosamente (fica sem capa).
+     */
+    private fun loadArtworkAsync(item: PlaybackItem) {
+        val uri = item.artworkUri ?: return
+        val startedId = item.id // capturado p/ o anti-race
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.convert(), 0.convert())) {
+            val image = loadArtwork(uri) ?: return@dispatch_async
+            dispatch_async(dispatch_get_main_queue()) {
+                val currentId = items.getOrNull(order.getOrNull(pos) ?: -1)?.id
+                if (!shouldApplyArtwork(startedId, currentId)) return@dispatch_async // faixa trocou: descarta
+                val center = MPNowPlayingInfoCenter.defaultCenter()
+                // Mescla no dicionário MAIS RECENTE (não num snapshot velho): preserva os
+                // campos textuais/tempo já publicados por chamadas posteriores.
+                val merged = HashMap<Any?, Any?>()
+                center.nowPlayingInfo?.let { merged.putAll(it) }
+                merged[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize = image.size) { _ -> image }
+                center.nowPlayingInfo = merged
+            }
+        }
+    }
+
+    /**
+     * Resolve o [artworkUri] numa [UIImage]: primeiro como arquivo de imagem (capa custom
+     * `coverOverride`); senão, extrai a arte EMBUTIDA do asset de áudio
+     * (`AVURLAsset.commonMetadata`, chave `artwork`). `null` = sem capa carregável.
+     */
+    private fun loadArtwork(artworkUri: String): UIImage? {
+        UIImage(contentsOfFile = artworkUri)?.let { return it }
+        return extractEmbeddedArtwork(artworkUri)
+    }
+
+    private fun extractEmbeddedArtwork(uri: String): UIImage? {
+        val url = NSURL.URLWithString(uri) ?: NSURL.fileURLWithPath(uri)
+        val asset = AVURLAsset(uRL = url, options = null)
+        for (entry in asset.commonMetadata.orEmpty()) {
+            val meta = entry as? AVMetadataItem ?: continue
+            if (meta.commonKey == AVMetadataCommonKeyArtwork) {
+                val data = meta.dataValue ?: continue
+                UIImage(data = data)?.let { return it }
+            }
+        }
+        return null
     }
 
     // --- Estado/tempo ---
