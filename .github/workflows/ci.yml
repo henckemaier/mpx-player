@@ -169,13 +169,21 @@ jobs:
 
       - name: Sobe simulador, instala e captura screenshot (iOS)
         run: |
+          mkdir -p ios-diag
           UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
           echo "Simulador UDID=$UDID"
           xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b || true   # espera o boot completar antes de instalar/lançar
           xcrun simctl install "$UDID" dd/Build/Products/Debug-iphonesimulator/iosApp.app
-          xcrun simctl launch "$UDID" com.mpx.player.spike.iosApp
-          sleep 6   # deixa o 1o frame + carga das fontes assentarem
+          # --console-pty streama stdout/stderr do app em background -> pega "Uncaught Kotlin
+          # exception" (ex.: resource/fonte nao encontrada) se crashar na largada. Rodando em
+          # background pq um app SwiftUI nao sai sozinho; matamos depois do screenshot.
+          xcrun simctl launch --console-pty "$UDID" com.mpx.player.spike.iosApp > ios-diag/applog.txt 2>&1 &
+          LPID=$!
+          sleep 10   # deixa 1o frame + carga das fontes assentarem
           xcrun simctl io "$UDID" screenshot crt-ios.png
+          kill "$LPID" 2>/dev/null || true
+          echo "=== app log (stdout/stderr) ==="; cat ios-diag/applog.txt || true
 
       - name: Upload do screenshot iOS
         if: always()
