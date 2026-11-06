@@ -101,19 +101,6 @@ jobs:
       # 2) Linka o framework estático `Shared` p/ iosSimulatorArm64 — é o que o host
       #    iosApp/ consome via FRAMEWORK_SEARCH_PATHS (shared/build/bin/iosSimulatorArm64/
       #    debugFramework/Shared.framework). Por isso roda ANTES do xcodebuild.
-      # Pre-boot do simulador alvo BEM cedo: o 1o boot de uma imagem nova dispara o
-      # LaunchServicesMigrator e o SpringBoard leva ~minutos p/ assentar. Lançar o app
-      # antes disso deixa o SpringBoard na HOME e o screenshot nao pega o render (visto no
-      # run 42176281072: 6 tentativas, TODAS a HOME de 3026950 bytes, com LaunchServices-
-      # Migrator churnando). Bootando aqui, os ~10min de build (test/link/xcodebuild)
-      # dao tempo do SpringBoard assentar ANTES da captura.
-      - name: Pre-boot do simulador iOS (assenta durante o build)
-        run: |
-          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
-          echo "Pre-boot UDID=$UDID"
-          xcrun simctl boot "$UDID" 2>/dev/null || true
-          xcrun simctl bootstatus "$UDID" -b || true
-
       - name: Testa no simulador arm64 + linka o framework Shared
         run: |
           chmod +x gradlew
@@ -126,6 +113,19 @@ jobs:
       # sob lldb/Xcode. Lançado standalone via `simctl launch`, o stub sai sem rodar nada
       # → app fica INSTALADO mas NÃO rodando (screenshot pegava a HOME). Com =NO o
       # executável carrega o código real e o `simctl launch` roda o app de fato.
+      # Pre-boot do simulador alvo AQUI (DEPOIS do teste konan — bootar junto disputava
+      # sim/RAM com o test runner e dava "Broken pipe" no iosSimulatorArm64Test, run
+      # 42177472057 — e ANTES do xcodebuild). O 1o boot dispara o LaunchServicesMigrator
+      # e o SpringBoard leva ~minutos p/ assentar; lançar antes disso deixa o screenshot
+      # na HOME (run 42176281072: 6 tentativas, todas HOME de 3026950 bytes). O tempo do
+      # xcodebuild + injeção de resources deixa o SpringBoard assentar antes da captura.
+      - name: Pre-boot do simulador iOS (assenta durante o xcodebuild)
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "Pre-boot UDID=$UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b || true
+
       - name: Build do host iosApp (simulador)
         run: |
           xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
