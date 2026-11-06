@@ -53,8 +53,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
-import com.mpx.player.playback.RepeatMode
-import com.mpx.player.playback.VolumeState
+import com.mpx.player.shared.playback.RepeatMode
+import com.mpx.player.shared.playback.VolumeState
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.TechInfo
 import com.mpx.player.ui.components.Cover

@@ -54,4 +54,25 @@ class AndroidAudioPlayerMappingTest {
         // index fora de faixa é saneado
         assertEquals(listOf(0 to 3), clearUpcomingRemovals(4, 9))
     }
+
+    @Test
+    fun playbackOrder_lineareShuffleeVazioeCiclo() {
+        val UNSET = -1
+        // linear (shuffle off): 0->1->2->3->fim
+        assertEquals(
+            listOf(0, 1, 2, 3),
+            playbackOrder(firstIndex = 0, unset = UNSET) { if (it < 3) it + 1 else UNSET },
+        )
+        // shuffle: ordem de reprodução derivada do mapa next (2,0,3,1)
+        val nextMap = mapOf(2 to 0, 0 to 3, 3 to 1, 1 to UNSET)
+        assertEquals(
+            listOf(2, 0, 3, 1),
+            playbackOrder(firstIndex = 2, unset = UNSET) { nextMap.getValue(it) },
+        )
+        // fila vazia: firstIndex == unset
+        assertEquals(emptyList(), playbackOrder(firstIndex = UNSET, unset = UNSET) { UNSET })
+        // guarda anti-loop: next que cicla (0->1->0) para após visitar cada um 1x
+        val cyclic = mapOf(0 to 1, 1 to 0)
+        assertEquals(listOf(0, 1), playbackOrder(firstIndex = 0, unset = UNSET) { cyclic.getValue(it) })
+    }
 }

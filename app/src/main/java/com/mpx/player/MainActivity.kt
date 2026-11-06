@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        container.player.connect()
+        container.audioPlayer.connect()
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
             MpxTheme(settings) { MpxRoot(container, settings) }
@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        container.player.connect()
+        container.audioPlayer.connect()
     }
 }
 

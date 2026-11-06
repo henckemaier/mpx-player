@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
 import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -104,12 +105,20 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
 
     private fun refresh() {
         val c = controller ?: return
-        val ids = List(c.mediaItemCount) { c.getMediaItemAt(it).mediaId }
+        // queueIds em ORDEM DE REPRODUÇÃO real do ExoPlayer (respeita shuffleModeEnabled nativo,
+        // preservando o toggle-restore: OFF volta à ordem de inserção). index = posição da faixa
+        // atual nessa ordem. Travessia da Timeline com REPEAT_MODE_OFF (ordem finita/linear).
+        val tl = c.currentTimeline
+        val order = playbackOrder(
+            firstIndex = tl.getFirstWindowIndex(c.shuffleModeEnabled),
+            unset = C.INDEX_UNSET,
+        ) { tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, c.shuffleModeEnabled) }
+        val ids = order.map { c.getMediaItemAt(it).mediaId }
         _state.update {
             it.copy(
                 connected = true,
                 queueIds = ids,
-                index = if (ids.isEmpty()) -1 else c.currentMediaItemIndex,
+                index = if (ids.isEmpty()) -1 else order.indexOf(c.currentMediaItemIndex),
                 isPlaying = c.isPlaying,
                 positionMs = c.currentPosition.coerceAtLeast(0),
                 durationMs = c.duration.takeIf { d -> d > 0 } ?: 0L,
@@ -191,8 +200,18 @@ internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
     override fun seekToFraction(fraction: Float) {
         controller?.run { if (duration > 0) seekTo((duration * fraction.coerceIn(0f, 1f)).toLong()) }
     }
+    // [index] é a posição na ORDEM DE REPRODUÇÃO (a UI itera ui.queue). Traduz p/ índice de
+    // TIMELINE antes do seekTo (sob shuffle divergem); com shuffle OFF, order=identidade.
     // Selecionar um índice implica tocar (ação explícita do usuário), por isso prepare()+play().
-    override fun seekToIndex(index: Int) { controller?.run { seekTo(index, 0L); prepare(); play() } }
+    override fun seekToIndex(index: Int) {
+        val c = controller ?: return
+        val tl = c.currentTimeline
+        val order = playbackOrder(tl.getFirstWindowIndex(c.shuffleModeEnabled), C.INDEX_UNSET) {
+            tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, c.shuffleModeEnabled)
+        }
+        val mediaIndex = order.getOrNull(index) ?: return
+        c.seekTo(mediaIndex, 0L); c.prepare(); c.play()
+    }
     override fun setShuffle(enabled: Boolean) { controller?.let { it.shuffleModeEnabled = enabled } }
     override fun setRepeat(mode: RepeatMode) { controller?.let { it.repeatMode = mode.toMedia3() } }
 
@@ -317,5 +336,22 @@ internal fun clearUpcomingRemovals(count: Int, current: Int): List<Pair<Int, Int
     val out = ArrayList<Pair<Int, Int>>(2)
     if (cur + 1 < count) out += (cur + 1) to count // depois da atual
     if (cur > 0) out += 0 to cur                    // antes da atual
+    return out
+}
+
+/**
+ * Travessia da ordem de reprodução da Timeline (caminho B do shuffle): a partir de
+ * [firstIndex], encadeia [next] até [unset]. [unset] é passado (C.INDEX_UNSET) para o
+ * helper ficar puro/testável. O guard de visitados evita laço infinito caso [next] cicle.
+ */
+internal inline fun playbackOrder(firstIndex: Int, unset: Int, next: (Int) -> Int): List<Int> {
+    if (firstIndex == unset) return emptyList()
+    val out = ArrayList<Int>()
+    val seen = HashSet<Int>()
+    var i = firstIndex
+    while (i != unset && seen.add(i)) {
+        out += i
+        i = next(i)
+    }
     return out
 }

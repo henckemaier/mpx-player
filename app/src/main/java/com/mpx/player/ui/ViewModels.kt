@@ -23,9 +23,10 @@ import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
 import com.mpx.player.model.Track
 import com.mpx.player.model.UserSettings
-import com.mpx.player.playback.PlayerState
-import com.mpx.player.playback.RepeatMode
-import com.mpx.player.playback.VolumeState
+import com.mpx.player.shared.playback.PlaybackState
+import com.mpx.player.shared.playback.RepeatMode
+import com.mpx.player.shared.playback.VolumeState
+import com.mpx.player.shared.playback.toPlaybackItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -76,17 +77,18 @@ data class TechInfo(val format: String = "---", val bitrate: String = "---", val
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModel(private val app: AndroidAppContainer) : ViewModel() {
 
-    private val player = app.player
+    private val player = app.audioPlayer
 
-    val ui: StateFlow<PlayerUi> = combine(player.state, app.library.state) { p: PlayerState, lib: LibraryState ->
-        val tracks = p.queue.mapNotNull { lib.track(it) }
+    val ui: StateFlow<PlayerUi> = combine(player.state, app.library.state) { p: PlaybackState, lib: LibraryState ->
+        // queueIds vem em ordem de reprodução (contrato); resolvemos via key (id = Track.key).
+        val tracks = p.queueIds.mapNotNull { lib.trackByKey(it) }
         PlayerUi(
-            current = p.currentId?.let { lib.track(it) },
+            current = p.currentId?.let { lib.trackByKey(it) },
             queue = tracks,
             index = p.index,
             isPlaying = p.isPlaying,
             positionMs = p.positionMs,
-            durationMs = if (p.durationMs > 0) p.durationMs else (p.currentId?.let { lib.track(it)?.durationMs } ?: 0),
+            durationMs = if (p.durationMs > 0) p.durationMs else (p.currentId?.let { lib.trackByKey(it)?.durationMs } ?: 0),
             shuffle = p.shuffle,
             repeat = p.repeat,
             sourceLabel = p.sourceLabel,
@@ -108,14 +110,7 @@ class PlayerViewModel(private val app: AndroidAppContainer) : ViewModel() {
         .state(this, TechInfo())
 
     val volume: StateFlow<VolumeState> = player.volume
-
-    init {
-        viewModelScope.launch {
-            while (true) {
-                player.pollVolume(); delay(1_000)
-            }
-        }
-    }
+    // Sem loop de pollVolume aqui: o AndroidAudioPlayer já pollueia o volume do sistema internamente.
 
     private suspend fun readTech(t: Track): TechInfo = withContext(Dispatchers.IO) {
         var rate = "---"
@@ -145,13 +140,21 @@ class PlayerViewModel(private val app: AndroidAppContainer) : ViewModel() {
     fun next() = player.next()
     fun previous() = player.previous()
     fun seek(f: Float) = player.seekToFraction(f)
-    fun toggleShuffle() = player.toggleShuffle()
-    fun cycleRepeat() = player.cycleRepeat()
+    fun toggleShuffle() = player.setShuffle(!player.state.value.shuffle)
+    // Mesma ordem de ciclo do antigo PlayerController.cycleRepeat: OFF -> ALL -> ONE -> OFF.
+    fun cycleRepeat() = player.setRepeat(
+        when (player.state.value.repeat) {
+            RepeatMode.OFF -> RepeatMode.ALL
+            RepeatMode.ALL -> RepeatMode.ONE
+            else -> RepeatMode.OFF
+        },
+    )
     fun setVolume(f: Float) = player.setVolume(f)
     fun toggleMute() = player.toggleMute()
     fun playIndex(i: Int) = player.seekToIndex(i)
     fun shuffleQueue() = player.shuffleQueue()
-    fun clearQueue() = player.clearQueue()
+    // Botão "limpar fila": mantém a faixa atual tocando (= comportamento de hoje).
+    fun clearQueue() = player.clearUpcoming()
     fun play() = player.play()
 
     // ---- favoritos / playlists (botão de marcador no Now Playing)
@@ -230,9 +233,16 @@ class LibraryViewModel(private val app: AndroidAppContainer) : ViewModel() {
     fun setQuery(q: String) { query.value = q }
     fun toggleSort() = ascending.update { !it }
 
-    fun playAlbum(a: Album) = app.player.play(a.tracks, 0, a.title)
-    fun playArtist(a: Artist) = app.player.play(a.tracks, 0, a.name)
-    fun playTrack(list: List<Track>, i: Int) = app.player.play(list, i, "/all_tracks")
+    fun playAlbum(a: Album) = playNow(a.tracks, 0, a.title)
+    fun playArtist(a: Artist) = playNow(a.tracks, 0, a.name)
+    fun playTrack(list: List<Track>, i: Int) = playNow(list, i, "/all_tracks")
+
+    /** Enfileira (mapeando Track -> PlaybackItem da fatia 4.2) e toca via audioPlayer. */
+    private fun playNow(tracks: List<Track>, startIndex: Int, label: String) {
+        if (tracks.isEmpty()) return
+        app.audioPlayer.setQueue(tracks.map { it.toPlaybackItem() }, startIndex, label)
+        app.audioPlayer.play()
+    }
 
     // ---- playlists
     fun createPlaylist(name: String, photo: Uri?) = viewModelScope.launch {
@@ -251,7 +261,7 @@ class LibraryViewModel(private val app: AndroidAppContainer) : ViewModel() {
     fun playPlaylist(id: String) {
         val p = app.playlists.playlists.value.firstOrNull { it.id == id } ?: return
         val tracks = app.library.state.value.tracksForKeys(p.trackKeys)
-        if (tracks.isNotEmpty()) app.player.play(tracks, 0, "/" + p.name.lowercase())
+        playNow(tracks, 0, "/" + p.name.lowercase())
     }
     fun addToPlaylist(playlistId: String, key: String) = app.playlists.addTrack(playlistId, key)
     fun removeFromPlaylist(playlistId: String, key: String) = app.playlists.removeTrack(playlistId, key)
@@ -372,7 +382,8 @@ class SettingsViewModel(private val app: AndroidAppContainer) : ViewModel() {
             message.value = "ERRO: NENHUMA FAIXA ENCONTRADA EM ${pl.name.uppercase()}"
         } else {
             app.settings.incPlaylists()
-            app.player.play(pl.tracks, 0, pl.name)
+            app.audioPlayer.setQueue(pl.tracks.map { it.toPlaybackItem() }, 0, pl.name)
+            app.audioPlayer.play()
             message.value = "OK: ${pl.tracks.size} FAIXAS CARREGADAS" + if (pl.missing > 0) " · ${pl.missing} AUSENTES" else ""
         }
     }
