@@ -31,9 +31,9 @@ import kotlinx.coroutines.launch
  * do `PlayerController` do `:app` (MediaController conectado ao MediaSessionService)
  * para operar sobre [PlaybackItem]/[PlaybackState] neutros de plataforma.
  *
- * TODO(passo 6/7): ao migrar UI/ViewModels para o `commonMain`, unificar com o
- * `com.mpx.player.playback.PlayerController` do `:app` (hoje duplicado de
- * propósito — o `:app` segue usando o seu enquanto a migração não chega).
+ * O `PlayerController` do `:app` (antes duplicado de propósito) foi removido na
+ * fatia 4 do passo 6; este é agora o único caminho de reprodução no Android.
+ * TODO(passo 7): migrar UI/ViewModels para o `commonMain`.
  */
 internal class AndroidAudioPlayer(context: Context) : AudioPlayer {
 

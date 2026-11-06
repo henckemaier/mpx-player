@@ -12,10 +12,9 @@ import com.mpx.player.shared.playback.AudioPlayer
  * Cresce conforme os ViewModels migram; expõe as fatias de dados (settings/biblioteca/
  * letras/playlists) e o [audioPlayer].
  *
- * [audioPlayer] é o player do contrato comum. Na fatia 3 ele COEXISTE ocioso com o
- * `PlayerController` do `:app` (que segue dirigindo a reprodução); a troca real — o
- * `:app` passar a enfileirar/observar por ele e o `PlayerController` sair — é a fatia 4.
- * O Android fornece a impl concreta (`AndroidAppContainer`).
+ * [audioPlayer] é o player do contrato comum e o único caminho de reprodução do `:app`
+ * (o antigo `PlayerController` foi removido na fatia 4). O Android fornece a impl
+ * concreta (`AndroidAppContainer`).
  */
 interface AppContainer {
     val settings: SettingsRepository

@@ -8,7 +8,7 @@ import com.mpx.player.model.Track
  * - `id = Track.key` (debt 3): identidade estável do arquivo. O `PlaybackService` resolve a
  *   URI por `requestMetadata.mediaUri`, **não** pelo mediaId — então usar a key é seguro
  *   (confirmado na fatia 3). A UI resolve de volta via `LibraryState.trackByKey(id)`.
- * - `artworkUri` é a MESMA capa de álbum que o `PlayerController.toMediaItem` usa hoje
+ * - `artworkUri` é a MESMA capa de álbum que o antigo `PlayerController.toMediaItem` usava
  *   (`ContentUris.withAppendedId(ALBUM_ART, albumId)`), aqui como String pura equivalente.
  *
  * Vive em `androidMain` (o esquema de URI de capa é do MediaStore, específico do Android);

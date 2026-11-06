@@ -49,7 +49,7 @@ data class VolumeState(val level: Int = 0, val max: Int = 15, val muted: Boolean
  *
  * É uma interface pura; cada plataforma fornece sua implementação:
  * - Android: adaptador sobre Media3 (`MediaController` + `PlaybackService`),
- *   a partir do atual `PlayerController`.
+ *   herdado do antigo `PlayerController` (removido na fatia 4).
  * - iOS: sobre AVFoundation (`AVQueuePlayer` + `MPNowPlayingInfoCenter`
  *   + `AVAudioSession`).
  *
