@@ -140,16 +140,40 @@ jobs:
 
       - name: Sobe simulador, instala e captura screenshot (iOS)
         run: |
+          set -uo pipefail
           mkdir -p ios-diag
           UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
           echo "Simulador UDID=$UDID"
           xcrun simctl boot "$UDID" 2>/dev/null || true
           xcrun simctl bootstatus "$UDID" -b || true   # espera o boot completar antes de instalar/lançar
           xcrun simctl install "$UDID" dd/Build/Products/Debug-iphonesimulator/iosApp.app
-          # launch PADRÃO (foreground): traz o app p/ frente no SpringBoard.
-          xcrun simctl launch "$UDID" com.mpx.player.iosApp | tee ios-diag/launch.txt
-          sleep 8   # deixa o 1o frame + carga da fonte assentarem
-          xcrun simctl io "$UDID" screenshot crt-ios.png
+          # DETERMINISMO DO SCREENSHOT: o 1o launch num simulador recém-bootado às vezes
+          # NÃO foregrounda (o screenshot pega a HOME, mesmo com o app lançado/PID vivo —
+          # flake de timing do SpringBoard). A SmokeScreen é quase toda PRETA → PNG pequeno
+          # (dezenas de KB); a HOME tem wallpaper → ~3MB. Relança + recaptura até o PNG
+          # ficar pequeno (render de fato) e FALHA o gate se nunca renderizar (assim o
+          # "screenshot da fumaça" é um gate real, não um verde falso com a HOME).
+          shot=0
+          for i in $(seq 1 6); do
+            xcrun simctl terminate "$UDID" com.mpx.player.iosApp 2>/dev/null || true
+            sleep 1
+            xcrun simctl launch "$UDID" com.mpx.player.iosApp | tee ios-diag/launch.txt
+            sleep 6   # deixa o 1o frame + carga da fonte assentarem
+            xcrun simctl io "$UDID" screenshot crt-ios.png
+            SZ=$(stat -f%z crt-ios.png 2>/dev/null || echo 0)
+            echo "tentativa $i: screenshot=$SZ bytes"
+            if [ "$SZ" -gt 0 ] && [ "$SZ" -lt 400000 ]; then
+              echo "RENDER capturado (<400KB = tela preta da fumaça; a HOME daria ~3MB)."
+              shot=1; break
+            fi
+            echo "screenshot grande (provável HOME); relançando..."
+            sleep 2
+          done
+          cp crt-ios.png ios-diag/crt-ios.png 2>/dev/null || true
+          if [ "$shot" -ne 1 ]; then
+            echo "::error::Nao capturei o render da SmokeScreen em 6 tentativas (screenshot sempre grande/HOME)."
+            exit 1
+          fi
 
       - name: Upload do screenshot iOS (smoke)
         if: always()
