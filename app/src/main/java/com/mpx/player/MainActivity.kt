@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mpx.player.data.AndroidTechInfoReader
 import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.EqViewModel
 import com.mpx.player.ui.LibraryViewModel
@@ -158,7 +159,7 @@ private fun MpxRoot(container: AndroidAppContainer, settings: UserSettings) {
 
 @Composable
 private fun MainShell(tab: Tab, onTab: (Tab) -> Unit, libraryFiles: Int, onReboot: () -> Unit) {
-    val playerVm = mpxViewModel { PlayerViewModel(it) }
+    val playerVm = mpxViewModel { PlayerViewModel(it, AndroidTechInfoReader(it.context)) }
     val player by playerVm.ui.collectAsStateWithLifecycle()
 
     if (Mpx.landscape) {

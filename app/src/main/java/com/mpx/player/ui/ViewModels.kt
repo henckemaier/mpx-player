@@ -2,7 +2,6 @@ package com.mpx.player.ui
 
 import android.app.RecoverableSecurityException
 import android.content.IntentSender
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -16,20 +15,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mpx.player.AndroidAppContainer
 import com.mpx.player.MpxApp
 import com.mpx.player.data.LibraryState
-import com.mpx.player.data.PlaylistLogic
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
-import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
 import com.mpx.player.model.Track
 import com.mpx.player.model.UserSettings
-import com.mpx.player.shared.playback.PlaybackState
-import com.mpx.player.shared.playback.RepeatMode
-import com.mpx.player.shared.playback.VolumeState
 import com.mpx.player.shared.playback.toPlaybackItem
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,14 +30,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 inline fun <reified VM : ViewModel> mpxViewModel(crossinline create: (AndroidAppContainer) -> VM): VM =
@@ -56,104 +44,11 @@ private fun <T> kotlinx.coroutines.flow.Flow<T>.state(vm: ViewModel, initial: T)
 
 // ============================================================ PLAYER (Now Playing + Fila)
 
-// PlayerUi foi movido para :shared/commonMain (com.mpx.player.ui.PlayerUi) na fatia fina de
-// UI (P7) — mesmo pacote/FQN, resolve aqui sem import. TechInfo FICA no :app (não é comum).
-
-data class TechInfo(val format: String = "---", val bitrate: String = "---", val sampleRate: String = "---", val extra: String = "")
-
-@OptIn(ExperimentalCoroutinesApi::class)
-class PlayerViewModel(private val app: AndroidAppContainer) : ViewModel() {
-
-    private val player = app.audioPlayer
-
-    val ui: StateFlow<PlayerUi> = combine(player.state, app.library.state) { p: PlaybackState, lib: LibraryState ->
-        // queueIds vem em ordem de reprodução (contrato); resolvemos via key (id = Track.key).
-        val tracks = p.queueIds.mapNotNull { lib.trackByKey(it) }
-        PlayerUi(
-            current = p.currentId?.let { lib.trackByKey(it) },
-            queue = tracks,
-            index = p.index,
-            isPlaying = p.isPlaying,
-            positionMs = p.positionMs,
-            durationMs = if (p.durationMs > 0) p.durationMs else (p.currentId?.let { lib.trackByKey(it)?.durationMs } ?: 0),
-            shuffle = p.shuffle,
-            repeat = p.repeat,
-            sourceLabel = p.sourceLabel,
-        )
-    }.state(this, PlayerUi())
-
-    private val currentTrack = ui.map { it.current }.distinctUntilChanged { a, b -> a?.id == b?.id }
-
-    val lyrics: StateFlow<List<LyricLine>> = combine(
-        currentTrack,
-        app.settings.settings.map { it.lrcTreeUri }.distinctUntilChanged(),
-        app.lyrics.version,
-    ) { t, tree, _ -> t to tree }
-        .flatMapLatest { (t, tree) -> if (t == null) flowOf(emptyList()) else flow { emit(app.lyrics.load(t, tree)) } }
-        .state(this, emptyList())
-
-    val tech: StateFlow<TechInfo> = currentTrack
-        .flatMapLatest { t -> if (t == null) flowOf(TechInfo()) else flow { emit(readTech(t)) } }
-        .state(this, TechInfo())
-
-    val volume: StateFlow<VolumeState> = player.volume
-    // Sem loop de pollVolume aqui: o AndroidAudioPlayer já pollueia o volume do sistema internamente.
-
-    private suspend fun readTech(t: Track): TechInfo = withContext(Dispatchers.IO) {
-        var rate = "---"
-        var bitrate = t.bitrate?.let { "${it / 1000}K" } ?: "---"
-        val retr = MediaMetadataRetriever()
-        try {
-            retr.setDataSource(app.context, Uri.parse(t.uri))
-            if (bitrate == "---") retr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull()?.let { bitrate = "${it / 1000}K" }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                retr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)?.toIntOrNull()?.let {
-                    rate = if (it % 1000 == 0) "${it / 1000}kHz" else String.format(java.util.Locale.US, "%.1fkHz", it / 1000f)
-                }
-            }
-        } catch (_: Exception) {
-        } finally {
-            runCatching { retr.release() }
-        }
-        TechInfo(
-            format = t.format,
-            bitrate = bitrate,
-            sampleRate = rate,
-            extra = t.year?.let { "ANO - $it" } ?: "TRK - %02d".format(t.trackNumber.coerceAtLeast(1)),
-        )
-    }
-
-    fun toggle() = player.toggle()
-    fun next() = player.next()
-    fun previous() = player.previous()
-    fun seek(f: Float) = player.seekToFraction(f)
-    fun toggleShuffle() = player.setShuffle(!player.state.value.shuffle)
-    // Mesma ordem de ciclo do antigo PlayerController.cycleRepeat: OFF -> ALL -> ONE -> OFF.
-    fun cycleRepeat() = player.setRepeat(
-        when (player.state.value.repeat) {
-            RepeatMode.OFF -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            else -> RepeatMode.OFF
-        },
-    )
-    fun setVolume(f: Float) = player.setVolume(f)
-    fun toggleMute() = player.toggleMute()
-    fun playIndex(i: Int) = player.seekToIndex(i)
-    fun shuffleQueue() = player.shuffleQueue()
-    // Botão "limpar fila": mantém a faixa atual tocando (= comportamento de hoje).
-    fun clearQueue() = player.clearUpcoming()
-    fun play() = player.play()
-
-    // ---- favoritos / playlists (botão de marcador no Now Playing)
-    val favorite: StateFlow<Boolean> = combine(currentTrack, app.playlists.playlists) { t, pls ->
-        t != null && PlaylistLogic.isFavorite(pls, t.key)
-    }.state(this, false)
-
-    val playlists: StateFlow<List<Playlist>> = app.playlists.playlists
-
-    fun toggleFavorite() { ui.value.current?.let { app.playlists.toggleFavorite(it.key) } }
-    fun addCurrentToPlaylist(id: String) { ui.value.current?.let { app.playlists.addTrack(id, it.key) } }
-}
+// PlayerUi foi movido para :shared/commonMain (com.mpx.player.ui.PlayerUi) na fatia fina de UI
+// (P7). Na fatia "estado real" (P7), PlayerViewModel + TechInfo + a interface TechInfoReader
+// também foram para :shared/commonMain (com.mpx.player.ui) — mesmo pacote/FQN, resolvem no :app
+// sem import. O único trecho Android-only (ler metadados técnicos via MediaMetadataRetriever)
+// virou AndroidTechInfoReader (com.mpx.player.data), injetado no VM pela factory (MainActivity).
 
 // ============================================================ BIBLIOTECA
 

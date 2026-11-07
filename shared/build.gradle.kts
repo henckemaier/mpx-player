@@ -67,6 +67,9 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            // Test-only (não vaza p/ o :app): runTest + Dispatchers.setMain p/ exercitar o
+            // viewModelScope multiplataforma no PlayerViewModelTest (Android + iOS).
+            implementation(libs.kotlinx.coroutines.test)
         }
         // Engine Ktor do iOS (Darwin/NSURLSession). O source set `iosMain` é criado pela hierarquia
         // padrão só em host macOS e apenas em afterEvaluate — por isso NÃO usamos getByName aqui
