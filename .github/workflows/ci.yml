@@ -128,6 +128,15 @@ jobs:
           else
             echo "::warning::PNG iOS (library) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
           fi
+          # Parse do 3o PNG: "A/B settings: PNG <n> B, escrito=<bool> em <path>" (SettingsScreen)
+          PNG_SET=$(grep -oE 'em (/[^ ]+settings-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (settings) resolvido: '$PNG_SET'"
+          if [ -n "$PNG_SET" ] && [ -f "$PNG_SET" ]; then
+            cp "$PNG_SET" ab/settings-ios.png
+            echo "Render A/B iOS (settings) copiado p/ ab/settings-ios.png ($(stat -f%z ab/settings-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (settings) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
 
       # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
       # Android commitado (ab/nowplaying-android.png), com MASCARA na faixa dinamica
@@ -154,6 +163,16 @@ jobs:
           else
             echo "::warning::baseline ab/library-android.png ausente (captura coordenada pelo Bigorna) — diff da Library PULADO nesta run. Vira gate duro quando o baseline for commitado."
           fi
+          # Par Settings (perfil 'settings': estrutural + glow, SEM cover) — GATE DURO assim que o
+          # baseline existir. MESMA cadencia da Library: o baseline (ab/settings-android.png) e um
+          # commit DELIBERADO coordenado pelo Bigorna (captura por adb na AbSettingsBaselineActivity).
+          # ENQUANTO nao existir, o diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG
+          # entrar no repo, vira gate duro. Tetos placeholder do perfil 'settings' = calibrados no c3.
+          if [ -f ab/settings-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/settings-android.png ab/settings-ios.png settings
+          else
+            echo "::warning::baseline ab/settings-android.png ausente (captura coordenada pelo Bigorna) — diff do Settings PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
 
       # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
       # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
@@ -169,6 +188,8 @@ jobs:
             ab/nowplaying-android.png
             ab/library-ios.png
             ab/library-android.png
+            ab/settings-ios.png
+            ab/settings-android.png
             ab/ios-test.log
           if-no-files-found: warn
 

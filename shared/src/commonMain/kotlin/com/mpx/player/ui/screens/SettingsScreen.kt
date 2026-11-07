@@ -87,10 +87,14 @@ fun SettingsScreen(
     importSlot: (@Composable () -> Unit)? = null,
     updateSlot: (@Composable () -> Unit)? = null,
     outputDevice: String? = null,
+    initialOpen: Int = 0,
 ) {
     val c = Mpx.colors
     val s = ui.settings
-    var open by rememberSaveable { mutableIntStateOf(0) }
+    // Seção inicialmente expandida (0 = todas colapsadas, comportamento padrão do app/host). O gate
+    // A/B passa initialOpen=2 p/ abrir CORES e renderizar o PREVIEW com Txt(glow=true) + swatches
+    // .glow no 1º frame — sem isso o render só traz headers colapsados (zero glow a cobrar).
+    var open by rememberSaveable { mutableIntStateOf(initialOpen) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),

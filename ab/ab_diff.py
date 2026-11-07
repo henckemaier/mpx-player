@@ -5,12 +5,15 @@
 # ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
 # espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# DOIS PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
+# TRÊS PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
 #   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
 #   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
 #                          Checks: ESTRUTURAL + GLOW. SEM cover (a grade de playlists usa
 #                          PlaylistCover(photo=null) → GeneratedCover vetorial, não a capa 1-bit).
+#   settings   (393x760) — SettingsScreen (CONFIG.SYS, seção CORES aberta via initialOpen=2).
+#                          Checks: ESTRUTURAL + GLOW (PREVIEW "SIGNAL//DECAY_"). SEM cover.
+#                          Tetos/máscaras PLACEHOLDER até a fatia c3 calibrar (ver o perfil abaixo).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -43,7 +46,7 @@
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
 # Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
-#   perfil ∈ {nowplaying (default), library}.  O check COVER so roda se o perfil define cover.
+#   perfil ∈ {nowplaying (default), library, settings}.  O check COVER so roda se o perfil define cover.
 #   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
@@ -97,6 +100,35 @@ PROFILES = {
         "glow_t": 18,
         "glow_bound": 150,          # known-good dev=39; folga modesta (lit-area de PRESENCA do nome)
         "cover": None,              # Library NAO tem a capa 1-bit -> sem check COVER
+    },
+    # SettingsScreen (CONFIG.SYS, secao CORES aberta via initialOpen=2). 3o par A/B.
+    # ATENCAO: os numeros abaixo sao PLACEHOLDER (ceiling/glow_bound ALTOS e masks/ROIs ESTIMADOS a
+    # olho sobre o layout) — a fatia c3 CALIBRA com os pixels REAIS do par CI (baseline Android x
+    # PNG-iOS do run verde): ceiling = AE_limpo*~1.5; glow_bound = folga modesta sobre o dev real;
+    # masks/ROIs medidos no baseline. Ate o baseline landar, o CI PULA este diff (::warning::), logo
+    # placeholder nao derruba o job. Teto/bound propositalmente FOLGADOS p/ a 1a run do baseline
+    # (commit deliberado) passar e dar espaco p/ apertar no c3.
+    #
+    # GLOW: a ROI cobre o PREVIEW "SIGNAL//DECAY_" (Txt display=true, glow=true) — o UNICO glow real
+    # da secao CORES (text-shadow blur 18f, mesmo mecanismo do titulo do NowPlaying). Mede a lit-area
+    # do halo (AE/SAD sao CEGOS ao halo tenue; a lit-area nao). Os 6 swatches de fosforo com .glow
+    # (blur do box colorido) sao o RISCO de ruido no estrutural (watch-item (e)): se somarem AE,
+    # o c3 calibra no AE LIMPO ou MASCARA os swatches (como o ♥ na Library) — NUNCA infla o teto.
+    #
+    # ESTRUTURAL mask: so o blinkingCursor do header ("_" apos ":: SELECIONE UMA OPCAO [1-6]"), que
+    # no 1o frame vale "_" (fundo accent) — faixa dinamica, mascarada (watch-item (d)). Coords
+    # medidas no baseline no c3.
+    "settings": {
+        "w": 393, "h": 760,
+        "tol": 32,
+        "ceiling": 6000,            # PLACEHOLDER alto (canvas 393x760 > library); c3 aperta p/ ~AE_limpo*1.5
+        "masks": [
+            (183, 30, 206, 58),     # PLACEHOLDER: blinkingCursor "_" do header (medir x/y reais no c3)
+        ],
+        "title_roi": (18, 430, 320, 515),  # PLACEHOLDER: bbox do PREVIEW "SIGNAL//DECAY_" + halo (medir no c3)
+        "glow_t": 18,
+        "glow_bound": 3000,         # PLACEHOLDER alto; c3 aperta p/ folga modesta sobre o dev real
+        "cover": None,              # CONFIG nao tem a capa 1-bit -> sem check COVER
     },
 }
 
