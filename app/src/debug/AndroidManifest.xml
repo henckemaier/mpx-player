@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SÓ-DEBUG: declara a AbBaselineActivity (harness one-off do baseline Android do A/B da
+     fatia fina de UI, P7). Merge só no build debug; não vai p/ release. exported=true p/ o
+     `adb shell am start` externo conseguir lançá-la. Sem intent-filter LAUNCHER (não aparece
+     na gaveta de apps; é lançada explicitamente por componente). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.mpx.player.debug.AbBaselineActivity"
+            android:exported="true" />
+    </application>
+</manifest>
