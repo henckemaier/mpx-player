@@ -22,6 +22,7 @@ import com.mpx.player.data.IosAlbumArtSource
 import com.mpx.player.data.IosTechInfoReader
 import com.mpx.player.di.AppContainer
 import com.mpx.player.di.createAppContainer
+import com.mpx.player.ui.EqViewModel
 import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.MpxShell
 import com.mpx.player.ui.NowPlayingActions
@@ -33,6 +34,8 @@ import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.components.TextButton
 import com.mpx.player.ui.nav.Destination
 import com.mpx.player.ui.nav.NavState
+import com.mpx.player.ui.screens.EqActions
+import com.mpx.player.ui.screens.EqScreen
 import com.mpx.player.ui.screens.LibraryActions
 import com.mpx.player.ui.screens.LibraryScreen
 import com.mpx.player.ui.screens.SettingsActions
@@ -82,6 +85,7 @@ private val playerViewModel: PlayerViewModel by lazy {
 }
 private val libraryViewModel: LibraryViewModel by lazy { LibraryViewModel(appContainer) }
 private val settingsViewModel: SettingsViewModel by lazy { SettingsViewModel(appContainer) }
+private val eqViewModel: EqViewModel by lazy { EqViewModel(appContainer) }
 
 // Loader de capa do host LIVE: fonte REAL do iOS (MPMediaItemArtwork é follow-up → no-op por ora,
 // logo o painel cai na capa gerada no simulador). O sample do A/B NÃO passa por aqui (ver
@@ -93,10 +97,13 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val playerUi by playerViewModel.ui.collectAsState()
     val tech by playerViewModel.tech.collectAsState()
     val settingsUi by settingsViewModel.ui.collectAsState()
+    val eq by eqViewModel.eq.collectAsState()
+    val eqSel by eqViewModel.selectedBand.collectAsState()
     // VMs singletons estáveis → as ações (method refs) são montadas uma vez, não a cada recomposição.
     val libActions = remember { iosLibActions(libraryViewModel) }
     val setActions = remember { iosSettingsActions(settingsViewModel) }
     val playerActions = remember { iosPlayerActions(playerViewModel) }
+    val eqActions = remember { iosEqActions(eqViewModel) }
     // Back-stack puro ([NavState]), igual ao :app (lá é rememberSaveable; no iOS não há recriação de
     // Activity, remember basta). onSelect = goTo (reordena-sem-dup).
     var nav by remember { mutableStateOf(NavState()) }
@@ -122,6 +129,9 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         // Slots Android = null (BAIXAR/IMPORTAR/UPDATE/SAÍDA somem); onReboot/
                         // onCheckUpdate = null (linha de botões some). Sem botão morto no iOS.
                         Destination.CONFIG to { SettingsScreen(settingsUi, setActions, onReboot = null) },
+                        // EQ: tela comum sobre o EqViewModel; edita/persiste EqSettings (via updateEq
+                        // do IosSettingsRepository). Efeito AUDÍVEL (AVAudioUnitEQ) = fatia de áudio futura.
+                        Destination.EQ to { EqScreen(eq, eqSel, eqActions) },
                     ),
                     onSelect = { nav = nav.goTo(it) },
                     header = {
@@ -138,8 +148,8 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         }
                     },
                     version = "1.0",
-                    // QUEUE/EQ ainda não portados → apagados e não-tapáveis (sem aba morta).
-                    enabled = { it == Destination.PLAY || it == Destination.LIBRARY || it == Destination.CONFIG },
+                    // QUEUE ainda não portado → apagado e não-tapável (sem aba morta). EQ entrou.
+                    enabled = { it == Destination.PLAY || it == Destination.LIBRARY || it == Destination.CONFIG || it == Destination.EQ },
                 )
             }
         }
@@ -188,6 +198,23 @@ private fun iosSettingsActions(vm: SettingsViewModel): SettingsActions = Setting
     onToggleCrossfade = vm::toggleCrossfade,
     onClearMessage = vm::clearMessage,
     onScan = vm::rescan,
+)
+
+/**
+ * [EqActions] do host iOS: equalizador 10-band + preamp + efeitos delegados ao [EqViewModel] comum.
+ * Editam/persistem o `eq` em NSUserDefaults (via `updateEq` do `IosSettingsRepository`). O efeito
+ * AUDÍVEL (AVAudioUnitEQ no grafo de áudio) é fatia de ÁUDIO futura — aqui a tela só edita/persiste.
+ */
+private fun iosEqActions(vm: EqViewModel): EqActions = EqActions(
+    toggleOn = vm::toggleOn,
+    preset = vm::pickPreset,
+    setBand = vm::setBand,
+    preamp = vm::preamp,
+    bass = vm::toggleBass,
+    surround = vm::toggleSurround,
+    loudness = vm::toggleLoudness,
+    reset = vm::reset,
+    save = vm::saveCustom,
 )
 
 /**

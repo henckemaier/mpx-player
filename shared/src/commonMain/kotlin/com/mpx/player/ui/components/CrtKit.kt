@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mpx.player.ui.theme.Mpx
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 // Primitivos CRT portáveis (commonMain) consumidos pelas telas e pelo NowPlayingPanel do porte
@@ -266,6 +267,15 @@ fun formatTime(ms: Long): String {
 }
 
 private fun Long.p2(): String = toString().padStart(2, '0')
+
+// String.format("%.1f", x) é JVM-only (não existe em common). Formata com 1 casa decimal
+// multiplataforma. Arredonda meio-pra-cima (roundToInt) e evita "-0.0" (sinal só se o valor
+// arredondado for != 0). Usado pelo rótulo de PREAMP no EqScreen comum.
+fun fmt1(x: Double): String {
+    val r = (kotlin.math.abs(x) * 10).roundToInt()
+    val sign = if (x < 0 && r != 0) "-" else ""
+    return "$sign${r / 10}.${r % 10}"
+}
 
 /** Divisória tracejada (listas de FAIXAS/ARTISTAS e ToggleRow). Puro — migrou do Crt.kt (:app). */
 @Composable

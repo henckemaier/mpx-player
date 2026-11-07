@@ -28,6 +28,7 @@ import com.mpx.player.ui.components.SegmentBar
 import com.mpx.player.ui.components.TextButton
 import com.mpx.player.ui.components.ToggleRow
 import com.mpx.player.ui.components.Txt
+import com.mpx.player.ui.components.fmt1
 import com.mpx.player.ui.components.frame
 import com.mpx.player.ui.components.tap
 import com.mpx.player.ui.theme.Mpx
@@ -175,7 +176,7 @@ private fun EqPreamp(eq: EqSettings, actions: EqActions) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Txt(":: PREAMP", size = 11.sp, color = c.dim)
             val db = EqPresets.preampToDb(eq.preamp)
-            Txt((if (db > 0) "+" else "") + String.format(java.util.Locale.US, "%.1f", db) + "dB", size = 11.sp)
+            Txt((if (db > 0) "+" else "") + fmt1(db.toDouble()) + "dB", size = 11.sp)
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton("-", Modifier.width(44.dp).height(44.dp), border = c.accent, size = 26.sp, display = true) { actions.preamp(-1) }
