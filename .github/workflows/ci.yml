@@ -101,10 +101,39 @@ jobs:
       # 2) Linka o framework estático `Shared` p/ iosSimulatorArm64 — é o que o host
       #    iosApp/ consome via FRAMEWORK_SEARCH_PATHS (shared/build/bin/iosSimulatorArm64/
       #    debugFramework/Shared.framework). Por isso roda ANTES do xcodebuild.
-      - name: Testa no simulador arm64 + linka o framework Shared
+      - name: Testa no simulador arm64 (inclui render A/B offscreen) + linka o framework Shared
         run: |
           chmod +x gradlew
-          ./gradlew :shared:iosSimulatorArm64Test :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
+          mkdir -p ab
+          set -eo pipefail
+          # -i p/ o stdout do teste K/N aparecer no log. NowPlayingPanelRenderTest grava o PNG
+          # em NSTemporaryDirectory (dentro do container do simulador, mas no filesystem do host)
+          # e IMPRIME o path absoluto resolvido — robusto, sem depender de env no container.
+          ./gradlew :shared:iosSimulatorArm64Test :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon -i 2>&1 | tee ab/ios-test.log
+          # Parse do stdout: "A/B offscreen: PNG <n> B, escrito=<bool> em <path>"
+          PNG=$(grep -oE 'em (/[^ ]+nowplaying-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS resolvido: '$PNG'"
+          if [ -n "$PNG" ] && [ -f "$PNG" ]; then
+            cp "$PNG" ab/nowplaying-ios.png
+            echo "Render A/B iOS copiado p/ ab/nowplaying-ios.png ($(stat -f%z ab/nowplaying-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+
+      # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
+      # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
+      # automático é a próxima fatia; aqui é diff visual. if-no-files-found: warn — o baseline
+      # entra por captura determinística à parte (não derruba o gate enquanto não estiver lá).
+      - name: Upload A/B PNGs (iOS offscreen + baseline Android)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ab-nowplaying
+          path: |
+            ab/nowplaying-ios.png
+            ab/nowplaying-android.png
+            ab/ios-test.log
+          if-no-files-found: warn
 
       # Builda o host SwiftUI (iosApp/) p/ o simulador. Compilar o framework não prova
       # que o app roda — este passo linka o CMP no app e valida o pipeline host→Compose.

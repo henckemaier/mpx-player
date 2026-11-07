@@ -53,12 +53,12 @@ import com.mpx.player.ui.components.MpxNav
 import com.mpx.player.ui.components.MpxNavRail
 import com.mpx.player.ui.components.Tab
 import com.mpx.player.ui.components.scanlines
+import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.mpxViewModel
 import com.mpx.player.ui.screens.BootScreen
 import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
 import com.mpx.player.ui.screens.LibraryScreen
-import com.mpx.player.ui.screens.NowPlayingActions
 import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen

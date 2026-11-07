@@ -56,21 +56,8 @@ private fun <T> kotlinx.coroutines.flow.Flow<T>.state(vm: ViewModel, initial: T)
 
 // ============================================================ PLAYER (Now Playing + Fila)
 
-data class PlayerUi(
-    val current: Track? = null,
-    val queue: List<Track> = emptyList(),
-    val index: Int = -1,
-    val isPlaying: Boolean = false,
-    val positionMs: Long = 0,
-    val durationMs: Long = 0,
-    val shuffle: Boolean = false,
-    val repeat: RepeatMode = RepeatMode.OFF,
-    val sourceLabel: String = "",
-) {
-    val totalMs: Long get() = queue.sumOf { it.durationMs }
-    val remainingMs: Long
-        get() = queue.drop(index.coerceAtLeast(0)).sumOf { it.durationMs } - positionMs.coerceAtMost(current?.durationMs ?: 0)
-}
+// PlayerUi foi movido para :shared/commonMain (com.mpx.player.ui.PlayerUi) na fatia fina de
+// UI (P7) — mesmo pacote/FQN, resolve aqui sem import. TechInfo FICA no :app (não é comum).
 
 data class TechInfo(val format: String = "---", val bitrate: String = "---", val sampleRate: String = "---", val extra: String = "")
 

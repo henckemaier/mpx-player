@@ -55,6 +55,7 @@ import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
 import com.mpx.player.shared.playback.RepeatMode
 import com.mpx.player.shared.playback.VolumeState
+import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.TechInfo
 import com.mpx.player.ui.components.Cover
@@ -73,19 +74,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-data class NowPlayingActions(
-    val toggle: () -> Unit,
-    val next: () -> Unit,
-    val previous: () -> Unit,
-    val seek: (Float) -> Unit,
-    val shuffle: () -> Unit,
-    val repeat: () -> Unit,
-    val setVolume: (Float) -> Unit,
-    val mute: () -> Unit,
-    val openLibrary: () -> Unit,
-    val toggleFavorite: () -> Unit,
-    val addToPlaylist: (String) -> Unit,
-)
+// NowPlayingActions foi movido para :shared/commonMain (com.mpx.player.ui.NowPlayingActions)
+// na fatia fina de UI (P7); importado acima.
 
 @Composable
 fun NowPlayingScreen(
