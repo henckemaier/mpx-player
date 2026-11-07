@@ -36,7 +36,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import android.net.Uri
 import com.mpx.player.model.Track
-import com.mpx.player.ui.LibraryViewModel
+import com.mpx.player.ui.AndroidLibraryViewModel
 import com.mpx.player.ui.PlaylistUi
 import com.mpx.player.ui.components.DashedDivider
 import com.mpx.player.ui.components.MpxIcons
@@ -60,7 +60,7 @@ sealed interface LibDialog {
 fun LibraryDialogs(
     dialog: LibDialog?,
     playlists: List<PlaylistUi>,
-    vm: LibraryViewModel,
+    vm: AndroidLibraryViewModel,
     onDismiss: () -> Unit,
     onEditTrack: (Track) -> Unit,
 ) {
@@ -148,7 +148,7 @@ private fun MenuItem(label: String, danger: Boolean = false, onClick: () -> Unit
 }
 
 @Composable
-private fun TrackEditorDialog(track: Track, vm: LibraryViewModel, onDismiss: () -> Unit) {
+private fun TrackEditorDialog(track: Track, vm: AndroidLibraryViewModel, onDismiss: () -> Unit) {
     val c = Mpx.colors
     val ctx = LocalContext.current
     var title by remember { mutableStateOf(track.title) }

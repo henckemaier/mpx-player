@@ -16,7 +16,7 @@ import com.mpx.player.model.Track
  * [IosAudioPlayer.updateNowPlaying]. Esta função é PURA (sem AVFoundation/UIKit) e coberta
  * por teste em `iosTest` (`IosArtworkLogicTest`).
  */
-fun Track.toPlaybackItem(): PlaybackItem = PlaybackItem(
+actual fun Track.toPlaybackItem(): PlaybackItem = PlaybackItem(
     id = key,
     uri = uri,
     title = title,

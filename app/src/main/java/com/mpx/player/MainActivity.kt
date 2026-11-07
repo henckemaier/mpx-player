@@ -43,8 +43,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mpx.player.data.AndroidTechInfoReader
 import com.mpx.player.model.UserSettings
+import com.mpx.player.ui.AndroidLibraryViewModel
 import com.mpx.player.ui.EqViewModel
-import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.PlayerViewModel
 import com.mpx.player.ui.SettingsViewModel
@@ -57,10 +57,10 @@ import com.mpx.player.ui.components.Tab
 import com.mpx.player.ui.components.scanlines
 import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.mpxViewModel
+import com.mpx.player.ui.screens.AndroidLibraryScreen
 import com.mpx.player.ui.screens.BootScreen
 import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
-import com.mpx.player.ui.screens.LibraryScreen
 import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen
@@ -227,9 +227,9 @@ private fun MainContent(
             )
         }
         Tab.LIB -> {
-            val vm = mpxViewModel { LibraryViewModel(it) }
+            val vm = mpxViewModel { AndroidLibraryViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            LibraryScreen(ui, player, vm, onOpenPlayer = { onTab(Tab.PLAY) })
+            AndroidLibraryScreen(ui, player, vm, onOpenPlayer = { onTab(Tab.PLAY) })
         }
         Tab.QUEUE -> QueueScreen(
             player,

@@ -17,10 +17,12 @@ import com.mpx.player.data.IosTechInfoReader
 import com.mpx.player.di.AppContainer
 import com.mpx.player.di.createAppContainer
 import com.mpx.player.model.UserSettings
-import com.mpx.player.ui.NowPlayingActions
-import com.mpx.player.ui.NowPlayingPanel
+import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.PlayerViewModel
 import com.mpx.player.ui.components.LocalCoverLoader
+import com.mpx.player.ui.screens.LibraryActions
+import com.mpx.player.ui.screens.LibraryScreen
+import com.mpx.player.ui.theme.LocalLandscape
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
 import platform.UIKit.UIViewController
@@ -29,14 +31,14 @@ import platform.UIKit.UIViewController
  * Ponto de entrada iOS do :shared. O host SwiftUI (iosApp/) consome este símbolo como
  * `MainViewControllerKt.MainViewController()` via `import Shared`.
  *
- * Fatia "estado real" (P7): o host agora liga o [NowPlayingPanel] ao [PlayerViewModel] REAL
- * (migrado p/ commonMain pelo Forja) em vez dos dados [sampleUi] estáticos — o painel passa a
- * refletir o estado vivo do player (`vm.ui`). O teste A/B offscreen (NowPlayingPanelRenderTest)
- * CONTINUA usando sampleUi determinístico — o HOST renderiza live, o TESTE renderiza sample;
- * não se misturam.
+ * Fatia LIBRARY (P7): o host agora renderiza a [LibraryScreen] REAL sobre um [LibraryViewModel]
+ * (comum) ligado ao container iOS, com browse real (filtro/busca/sort/play/playlist). Os 3
+ * gatilhos de diálogo (edição/criação/exclusão) são no-op no iOS (dependem de device/Uri — TODO).
+ * O mini-player reusa `vm.ui` do [PlayerViewModel] já ligado. O teste A/B offscreen
+ * (NowPlayingPanelRenderTest) é INDEPENDENTE do host (renderiza `sampleUi`) e segue intacto.
  *
- * ESPERADO no simulador: a biblioteca iOS é vazia (MPMediaQuery sem device) → `ui = PlayerUi()`
- * → o painel mostra NO_SIGNAL. Conteúdo real só no iPhone. Isso é registro, não falha.
+ * ESPERADO no simulador: a biblioteca iOS é vazia (MPMediaQuery sem device) → `LibraryUi` cai em
+ * `totalFiles == 0` ("> 0 FILES / NENHUM ÁUDIO..."). Conteúdo real só no iPhone. Registro, não falha.
  *
  * Mora em iosMain → só compila em host macOS; no Windows o source set é ignorado.
  */
@@ -50,6 +52,7 @@ private val appContainer: AppContainer by lazy {
 private val playerViewModel: PlayerViewModel by lazy {
     PlayerViewModel(appContainer, IosTechInfoReader())
 }
+private val libraryViewModel: LibraryViewModel by lazy { LibraryViewModel(appContainer) }
 
 // Loader de capa do host LIVE: fonte REAL do iOS (MPMediaItemArtwork é follow-up → no-op por ora,
 // logo o painel cai na capa gerada no simulador). O sample do A/B NÃO passa por aqui (ver
@@ -57,34 +60,41 @@ private val playerViewModel: PlayerViewModel by lazy {
 private val coverLoader: CoverLoader by lazy { CoverLoader(IosAlbumArtSource()) }
 
 fun MainViewController(): UIViewController = ComposeUIViewController {
-    val vm = playerViewModel
-    val ui by vm.ui.collectAsState()
-    // vm é singleton estável → as ações (method refs) são montadas uma vez, não a cada recomposição.
-    val actions = remember { iosActions(vm) }
+    val libUi by libraryViewModel.ui.collectAsState()
+    val playerUi by playerViewModel.ui.collectAsState()
+    // VMs singletons estáveis → as ações (method refs) são montadas uma vez, não a cada recomposição.
+    val actions = remember { iosLibActions(libraryViewModel) }
     MpxTheme(UserSettings()) {
-        CompositionLocalProvider(LocalCoverLoader provides coverLoader) {
+        CompositionLocalProvider(
+            LocalCoverLoader provides coverLoader,
+            LocalLandscape provides false,
+        ) {
             Box(Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp)) {
-                NowPlayingPanel(ui, actions)
+                LibraryScreen(libUi, playerUi, actions)
             }
         }
     }
 }
 
 /**
- * Mapeia os 11 callbacks do [NowPlayingActions] para o [PlayerViewModel]. As 6 do painel
- * (toggle/next/previous/seek/shuffle/repeat) + volume/mute/favorito/playlist; `openLibrary`
- * é no-op nesta fatia (navegação entra depois).
+ * [LibraryActions] do host iOS: browse REAL delegado ao [LibraryViewModel] (filtro/busca/sort/
+ * play álbum-artista-faixa-playlist/abrir-fechar/remover). Os 3 gatilhos de diálogo
+ * (onTrackLong/onNewPlaylist/onEditPlaylist) são NO-OP — a edição/exclusão depende de device/Uri
+ * (TODO). `onOpenPlayer` é no-op nesta fatia (navegação entra depois).
  */
-private fun iosActions(vm: PlayerViewModel): NowPlayingActions = NowPlayingActions(
-    toggle = vm::toggle,
-    next = vm::next,
-    previous = vm::previous,
-    seek = vm::seek,
-    shuffle = vm::toggleShuffle,
-    repeat = vm::cycleRepeat,
-    setVolume = vm::setVolume,
-    mute = vm::toggleMute,
-    openLibrary = {},
-    toggleFavorite = vm::toggleFavorite,
-    addToPlaylist = vm::addCurrentToPlaylist,
+private fun iosLibActions(vm: LibraryViewModel): LibraryActions = LibraryActions(
+    onFilter = vm::setFilter,
+    onQuery = vm::setQuery,
+    onToggleSort = vm::toggleSort,
+    onPlayAlbum = vm::playAlbum,
+    onPlayArtist = vm::playArtist,
+    onPlayTrack = vm::playTrack,
+    onOpenPlaylist = vm::openPlaylist,
+    onClosePlaylist = vm::closePlaylist,
+    onPlayPlaylist = vm::playPlaylist,
+    onRemoveFromPlaylist = vm::removeFromPlaylist,
+    onOpenPlayer = {},
+    onTrackLong = {},
+    onNewPlaylist = {},
+    onEditPlaylist = {},
 )

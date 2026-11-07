@@ -1,5 +1,6 @@
 package com.mpx.player.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,8 +46,9 @@ import com.mpx.player.ui.theme.Mpx
 import kotlinx.coroutines.delay
 
 // Primitivos CRT portáveis (commonMain) consumidos pelas telas e pelo NowPlayingPanel do porte
-// iOS. Os blocos que dependem de Android (MpxHeader/BuildConfig, Tab/nav, Panel, ToggleRow,
-// DashedDivider) ficam no Crt.kt do :app, no MESMO pacote — Kotlin resolve entre módulos.
+// iOS. Os blocos que dependem de Android (MpxHeader/BuildConfig, Tab/nav, Panel, ToggleRow)
+// ficam no Crt.kt do :app, no MESMO pacote — Kotlin resolve entre módulos. DashedDivider migrou
+// p/ cá na fatia LIBRARY (puro; usado pela LibraryScreen comum e pela ToggleRow do :app).
 
 // ---------------------------------------------------------------- texto
 
@@ -263,3 +265,17 @@ fun formatTime(ms: Long): String {
 }
 
 private fun Long.p2(): String = toString().padStart(2, '0')
+
+/** Divisória tracejada (listas de FAIXAS/ARTISTAS e ToggleRow). Puro — migrou do Crt.kt (:app). */
+@Composable
+fun DashedDivider() {
+    val c = Mpx.colors
+    Canvas(Modifier.fillMaxWidth().height(1.dp)) {
+        val dash = 3.dp.toPx()
+        var x = 0f
+        while (x < size.width) {
+            drawLine(c.dash, Offset(x, 0f), Offset((x + dash).coerceAtMost(size.width), 0f), strokeWidth = size.height)
+            x += dash * 2
+        }
+    }
+}

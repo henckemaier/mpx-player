@@ -12,9 +12,10 @@ import com.mpx.player.model.Track
  *   (`ContentUris.withAppendedId(ALBUM_ART, albumId)`), aqui como String pura equivalente.
  *
  * Vive em `androidMain` (o esquema de URI de capa é do MediaStore, específico do Android);
- * o `:app` usa no fluxo de reprodução a partir da sub-fatia 4.3. Ainda SEM uso nesta fatia.
+ * o `:app` usa no fluxo de reprodução a partir da sub-fatia 4.3. `actual` do `expect` comum
+ * (promovido na fatia LIBRARY p/ o LibraryViewModel comum enfileirar).
  */
-fun Track.toPlaybackItem(): PlaybackItem = PlaybackItem(
+actual fun Track.toPlaybackItem(): PlaybackItem = PlaybackItem(
     id = key,
     uri = uri,
     title = title,

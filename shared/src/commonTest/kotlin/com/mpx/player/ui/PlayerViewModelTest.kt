@@ -203,6 +203,7 @@ private class FakePlaylists : PlaylistRepository {
     override val playlists: StateFlow<List<Playlist>> = MutableStateFlow(emptyList())
     override fun toggleFavorite(key: String) {}
     override fun addTrack(id: String, key: String) {}
+    override fun removeTrack(id: String, key: String) {}
 }
 
 private class FakeContainer(

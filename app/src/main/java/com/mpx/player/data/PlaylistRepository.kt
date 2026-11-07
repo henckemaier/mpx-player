@@ -49,7 +49,7 @@ class AndroidPlaylistRepository(private val context: Context) : PlaylistReposito
     fun delete(id: String) = update { PlaylistLogic.deleted(it, id) }
     fun setPhoto(id: String, photo: String?) = update { PlaylistLogic.photoSet(it, id, photo) }
     override fun addTrack(id: String, key: String) = update { PlaylistLogic.withTrack(it, id, key) }
-    fun removeTrack(id: String, key: String) = update { PlaylistLogic.withoutTrack(it, id, key) }
+    override fun removeTrack(id: String, key: String) = update { PlaylistLogic.withoutTrack(it, id, key) }
     override fun toggleFavorite(key: String) = update { PlaylistLogic.favoriteToggled(it, key) }
     fun purgeKey(key: String) = update { PlaylistLogic.purgeKey(it, key) }
 }

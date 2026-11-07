@@ -1,9 +1,5 @@
 package com.mpx.player.ui.screens
 
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,11 +23,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
@@ -46,7 +37,6 @@ import com.mpx.player.model.Artist
 import com.mpx.player.model.Track
 import com.mpx.player.ui.LibFilter
 import com.mpx.player.ui.LibraryUi
-import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.OpenedPlaylist
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.PlaylistUi
@@ -61,22 +51,38 @@ import com.mpx.player.ui.components.frame
 import com.mpx.player.ui.components.tap
 import com.mpx.player.ui.theme.Mpx
 
-@Composable
-fun LibraryScreen(ui: LibraryUi, player: PlayerUi, vm: LibraryViewModel, onOpenPlayer: () -> Unit) {
-    val c = Mpx.colors
-    var dialog by remember { mutableStateOf<LibDialog?>(null) }
+/**
+ * Tela da biblioteca (BROWSE) — migrada para `commonMain` na fatia LIBRARY (P7). MESMO FQN
+ * (com.mpx.player.ui.screens.LibraryScreen). ZERO API Android: as chamadas diretas a `vm.*`
+ * viram [LibraryActions] (molde [com.mpx.player.ui.NowPlayingActions]); o estado de diálogo, o
+ * launcher de exclusão e os `LibraryDialogs` ficam no wrapper Android (`AndroidLibraryScreen`),
+ * disparados pelos 3 gatilhos [LibraryActions.onTrackLong]/[onNewPlaylist]/[onEditPlaylist].
+ */
+data class LibraryActions(
+    val onFilter: (LibFilter) -> Unit,
+    val onQuery: (String) -> Unit,
+    val onToggleSort: () -> Unit,
+    val onPlayAlbum: (Album) -> Unit,
+    val onPlayArtist: (Artist) -> Unit,
+    val onPlayTrack: (List<Track>, Int) -> Unit,
+    val onOpenPlaylist: (String) -> Unit,
+    val onClosePlaylist: () -> Unit,
+    val onPlayPlaylist: (String) -> Unit,
+    val onRemoveFromPlaylist: (String, String) -> Unit,
+    val onOpenPlayer: () -> Unit,
+    // Gatilhos de diálogo — o HOST (wrapper Android) trata; no iOS são no-op por ora.
+    val onTrackLong: (Track) -> Unit,
+    val onNewPlaylist: () -> Unit,
+    val onEditPlaylist: (OpenedPlaylist) -> Unit,
+)
 
-    // Lança o diálogo do sistema para excluir o arquivo (Android 11+).
-    val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        if (r.resultCode == Activity.RESULT_OK) vm.onDeleteConfirmed() else vm.cancelDelete()
-    }
-    LaunchedEffect(Unit) {
-        vm.deleteRequests.collect { deleteLauncher.launch(IntentSenderRequest.Builder(it).build()) }
-    }
+@Composable
+fun LibraryScreen(ui: LibraryUi, player: PlayerUi, actions: LibraryActions) {
+    val c = Mpx.colors
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SearchRow(ui, vm)
-        FilterRow(ui.filter, vm::setFilter)
+        SearchRow(ui, actions)
+        FilterRow(ui.filter, actions.onFilter)
 
         Box(Modifier.weight(1f)) {
             when {
@@ -84,37 +90,37 @@ fun LibraryScreen(ui: LibraryUi, player: PlayerUi, vm: LibraryViewModel, onOpenP
                 ui.filter == LibFilter.PLAYLISTS && ui.opened != null ->
                     PlaylistDetail(
                         ui.opened, player.current?.id,
-                        onBack = vm::closePlaylist,
-                        onPlay = { vm.playPlaylist(ui.opened.id); onOpenPlayer() },
-                        onPlayTrack = { list, i -> vm.playTrack(list, i); onOpenPlayer() },
-                        onRemove = { key -> vm.removeFromPlaylist(ui.opened.id, key) },
-                        onLong = { dialog = LibDialog.TrackMenu(it) },
-                        onEditPhoto = { dialog = LibDialog.EditPlaylist(ui.opened.id, ui.opened.name, ui.opened.photo, ui.opened.locked) },
+                        onBack = actions.onClosePlaylist,
+                        onPlay = { actions.onPlayPlaylist(ui.opened.id); actions.onOpenPlayer() },
+                        onPlayTrack = { list, i -> actions.onPlayTrack(list, i); actions.onOpenPlayer() },
+                        onRemove = { key -> actions.onRemoveFromPlaylist(ui.opened.id, key) },
+                        onLong = actions.onTrackLong,
+                        onEditPhoto = { actions.onEditPlaylist(ui.opened) },
                     )
                 ui.filter == LibFilter.PLAYLISTS ->
                     PlaylistGrid(
                         ui.playlists.filter { ui.query.isBlank() || it.name.contains(ui.query.trim(), true) }
                             .let { if (ui.ascending) it else it.reversed() },
-                        onOpen = vm::openPlaylist,
-                        onNew = { dialog = LibDialog.CreatePlaylist },
+                        onOpen = actions.onOpenPlaylist,
+                        onNew = actions.onNewPlaylist,
                     )
                 ui.totalFiles == 0 -> Column {
                     Txt("> 0 FILES", size = 12.sp)
                     Txt("NENHUM ÁUDIO ENCONTRADO NO APARELHO.", size = 11.sp, color = c.dim, maxLines = 2)
                 }
-                ui.filter == LibFilter.ALBUNS -> AlbumGrid(ui.albums, player.current?.albumId) { vm.playAlbum(it); onOpenPlayer() }
-                ui.filter == LibFilter.ARTISTAS -> ArtistList(ui.artists) { vm.playArtist(it); onOpenPlayer() }
+                ui.filter == LibFilter.ALBUNS -> AlbumGrid(ui.albums, player.current?.albumId) { actions.onPlayAlbum(it); actions.onOpenPlayer() }
+                ui.filter == LibFilter.ARTISTAS -> ArtistList(ui.artists) { actions.onPlayArtist(it); actions.onOpenPlayer() }
                 else -> TrackList(
                     ui.tracks, player.current?.id, ui.favoriteKeys,
-                    onPlay = { i -> vm.playTrack(ui.tracks, i); onOpenPlayer() },
-                    onLong = { dialog = LibDialog.TrackMenu(it) },
+                    onPlay = { i -> actions.onPlayTrack(ui.tracks, i); actions.onOpenPlayer() },
+                    onLong = actions.onTrackLong,
                 )
             }
         }
 
         player.current?.let { t ->
             Row(
-                Modifier.fillMaxWidth().height(44.dp).background(c.accent).tap(onClick = onOpenPlayer).padding(horizontal = 10.dp),
+                Modifier.fillMaxWidth().height(44.dp).background(c.accent).tap(onClick = actions.onOpenPlayer).padding(horizontal = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -126,12 +132,10 @@ fun LibraryScreen(ui: LibraryUi, player: PlayerUi, vm: LibraryViewModel, onOpenP
             }
         }
     }
-
-    LibraryDialogs(dialog, ui.playlists, vm, onDismiss = { dialog = null }, onEditTrack = { dialog = LibDialog.EditTrack(it) })
 }
 
 @Composable
-private fun SearchRow(ui: LibraryUi, vm: LibraryViewModel) {
+private fun SearchRow(ui: LibraryUi, actions: LibraryActions) {
     val c = Mpx.colors
     Row(
         Modifier.fillMaxWidth().height(44.dp).frame(c.accent).padding(horizontal = 10.dp),
@@ -143,15 +147,15 @@ private fun SearchRow(ui: LibraryUi, vm: LibraryViewModel) {
             if (ui.query.isEmpty()) Txt("grep -i \"nome\"", size = 13.sp, color = c.dim)
             BasicTextField(
                 value = ui.query,
-                onValueChange = vm::setQuery,
+                onValueChange = actions.onQuery,
                 singleLine = true,
                 textStyle = TextStyle(color = c.accent, fontSize = 13.sp, fontFamily = Mpx.style.mono),
                 cursorBrush = SolidColor(c.accent),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        if (ui.query.isNotEmpty()) Txt("[X]", Modifier.tap { vm.setQuery("") }, size = 13.sp)
-        Txt(if (ui.ascending) "A-Z" else "Z-A", Modifier.tap(onClick = vm::toggleSort), size = 12.sp, color = c.dim)
+        if (ui.query.isNotEmpty()) Txt("[X]", Modifier.tap { actions.onQuery("") }, size = 13.sp)
+        Txt(if (ui.ascending) "A-Z" else "Z-A", Modifier.tap(onClick = actions.onToggleSort), size = 12.sp, color = c.dim)
     }
 }
 

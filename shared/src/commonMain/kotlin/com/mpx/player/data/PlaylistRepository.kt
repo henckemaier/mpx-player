@@ -15,4 +15,7 @@ interface PlaylistRepository {
 
     /** Adiciona a faixa [key] à playlist [id]. */
     fun addTrack(id: String, key: String)
+
+    /** Remove a faixa [key] da playlist [id]. */
+    fun removeTrack(id: String, key: String)
 }

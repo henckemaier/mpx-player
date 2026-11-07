@@ -34,6 +34,8 @@ class IosPlaylistRepository : PlaylistRepository {
 
     override fun addTrack(id: String, key: String) = update { PlaylistLogic.withTrack(it, id, key) }
 
+    override fun removeTrack(id: String, key: String) = update { PlaylistLogic.withoutTrack(it, id, key) }
+
     companion object {
         const val KEY = "mpx_playlists"
     }

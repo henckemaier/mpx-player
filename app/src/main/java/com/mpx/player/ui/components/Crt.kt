@@ -1,6 +1,5 @@
 package com.mpx.player.ui.components
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -125,17 +123,4 @@ fun ToggleRow(name: String, checked: Boolean, value: String, onClick: () -> Unit
         Txt(value, size = 12.sp, color = c.dim)
     }
     DashedDivider()
-}
-
-@Composable
-fun DashedDivider() {
-    val c = Mpx.colors
-    Canvas(Modifier.fillMaxWidth().height(1.dp)) {
-        val dash = 3.dp.toPx()
-        var x = 0f
-        while (x < size.width) {
-            drawLine(c.dash, Offset(x, 0f), Offset((x + dash).coerceAtMost(size.width), 0f), strokeWidth = size.height)
-            x += dash * 2
-        }
-    }
 }
