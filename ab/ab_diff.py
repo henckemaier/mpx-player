@@ -48,7 +48,7 @@ W, H = 393, 420
 
 # --- check (1) estrutural (coords recalibradas p/ o layout COM a capa; density 1f -> dp==px)
 TOL = 32
-CEILING = 2000
+CEILING = 1600          # known-good real (CI 7f0f536) = 1044; ~1.5x de folga (layout com a capa)
 MASKS = [
     (22, 60, 151, 189),    # CAPA (fidelidade cobrada no check (3) COVER — regiao disjunta)
     (167, 230, 187, 242),  # CURSOR: só o "_" final do titulo (E de DRIVE termina ~x166)
@@ -64,7 +64,8 @@ GLOW_BOUND = 500                # desvio maximo da extensao do glow (iOS vs Andr
 # --- check (3) cover
 COVER_ROI = (24, 62, 148, 186)  # interior da capa 128px (dither puro, sem a moldura accent)
 COVER_TOL = 40                  # 2 cores alto contraste; tolerancia por canal
-COVER_CEILING = 600             # teto do AE na ROI da capa (provisorio; calibrar com o CI)
+COVER_CEILING = 50              # APERTADO: known-good real (CI 7f0f536) = 0 (capa BIT-PERFEITA
+                                # iOS x Android); regressao da capa estoura p/ ~15k. Folga minima.
 
 
 def _chanmax(diff):
