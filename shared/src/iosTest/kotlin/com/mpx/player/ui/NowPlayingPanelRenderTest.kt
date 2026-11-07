@@ -16,6 +16,7 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
 import platform.Foundation.NSTemporaryDirectory
 import platform.posix.fclose
@@ -47,10 +48,14 @@ class NowPlayingPanelRenderTest {
     @OptIn(ExperimentalForeignApi::class)
     @Test
     fun renderNowPlayingPanel_offscreen_producesNonEmptyPng() {
+        // Capa do A/B: cover=1 (DITHER) + mono → o pipeline 1-bit; pré-resolvida SÍNCRONO (o render
+        // é de 1 frame, o produceState assíncrono do Cover não assentaria). Ver sampleCoverArt.
+        val settings = UserSettings(cover = 1, monoCovers = true)
+        val sampleCover = runBlocking { sampleCoverArt(settings) }
         val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
-            MpxTheme(UserSettings()) {
+            MpxTheme(settings) {
                 Box(Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp)) {
-                    NowPlayingPanel(sampleUi, noopActions)
+                    NowPlayingPanel(sampleUi, noopActions, sampleTech, sampleCover)
                 }
             }
         }

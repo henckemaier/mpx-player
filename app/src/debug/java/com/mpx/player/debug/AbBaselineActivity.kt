@@ -20,9 +20,12 @@ import androidx.core.view.drawToBitmap
 import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.NowPlayingPanel
 import com.mpx.player.ui.noopActions
+import com.mpx.player.ui.sampleCoverArt
+import com.mpx.player.ui.sampleTech
 import com.mpx.player.ui.sampleUi
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileOutputStream
 
@@ -50,13 +53,17 @@ class AbBaselineActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Capa do A/B pré-resolvida (mesmo helper comum do harness iOS) — cover=1 DITHER + mono.
+        val settings = UserSettings(cover = 1, monoCovers = true)
+        val sampleCover = runBlocking { sampleCoverArt(settings) }
+
         val compose = ComposeView(this).apply {
             setContent {
                 // Density fixa 1f: espelha ImageComposeScene(..., density = Density(1f)) do iOS.
                 CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                    MpxTheme(UserSettings()) {
+                    MpxTheme(settings) {
                         Box(Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp)) {
-                            NowPlayingPanel(sampleUi, noopActions)
+                            NowPlayingPanel(sampleUi, noopActions, sampleTech, sampleCover)
                         }
                     }
                 }

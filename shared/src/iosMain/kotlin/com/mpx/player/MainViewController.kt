@@ -4,12 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeUIViewController
+import com.mpx.player.data.CoverLoader
+import com.mpx.player.data.IosAlbumArtSource
 import com.mpx.player.data.IosTechInfoReader
 import com.mpx.player.di.AppContainer
 import com.mpx.player.di.createAppContainer
@@ -17,6 +20,7 @@ import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.NowPlayingPanel
 import com.mpx.player.ui.PlayerViewModel
+import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
 import platform.UIKit.UIViewController
@@ -47,14 +51,21 @@ private val playerViewModel: PlayerViewModel by lazy {
     PlayerViewModel(appContainer, IosTechInfoReader())
 }
 
+// Loader de capa do host LIVE: fonte REAL do iOS (MPMediaItemArtwork é follow-up → no-op por ora,
+// logo o painel cai na capa gerada no simulador). O sample do A/B NÃO passa por aqui (ver
+// NowPlayingPanelRenderTest + sampleCoverArt). Singleton de arquivo, criado 1x.
+private val coverLoader: CoverLoader by lazy { CoverLoader(IosAlbumArtSource()) }
+
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val vm = playerViewModel
     val ui by vm.ui.collectAsState()
     // vm é singleton estável → as ações (method refs) são montadas uma vez, não a cada recomposição.
     val actions = remember { iosActions(vm) }
     MpxTheme(UserSettings()) {
-        Box(Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp)) {
-            NowPlayingPanel(ui, actions)
+        CompositionLocalProvider(LocalCoverLoader provides coverLoader) {
+            Box(Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp)) {
+                NowPlayingPanel(ui, actions)
+            }
         }
     }
 }

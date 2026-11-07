@@ -2,26 +2,36 @@ package com.mpx.player.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mpx.player.data.CoverArt
 import com.mpx.player.shared.playback.RepeatMode
+import com.mpx.player.ui.components.Cover
 import com.mpx.player.ui.components.IconButton
 import com.mpx.player.ui.components.InvertedBar
 import com.mpx.player.ui.components.MpxIcons
@@ -30,6 +40,7 @@ import com.mpx.player.ui.components.Txt
 import com.mpx.player.ui.components.blinkingCursor
 import com.mpx.player.ui.components.formatTime
 import com.mpx.player.ui.components.frame
+import com.mpx.player.ui.components.scanlines
 import com.mpx.player.ui.theme.Mpx
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -40,22 +51,81 @@ import kotlin.math.roundToInt
  * foco no blur do text-shadow do título). CÓPIA fiel do top-block de
  * app/.../ui/screens/NowPlayingScreen.kt (retrato), sem compartilhar daquele arquivo.
  *
- * INCLUI: InvertedBar("> NOW PLAYING", "TRK NN/NN") + título VT323 grande com glow + dosPath
- * dim + progresso (SegmentBar + tempos) + transporte (shuffle/prev/play-pause/next/repeat) +
- * Spectrum. NÃO inclui (ficam no :app, fora desta fatia): Cover/NpCoverMeta, Console/LYRICS,
- * VolumeRow, TechInfo, Bookmark, e o layout de paisagem.
+ * INCLUI: InvertedBar("> NOW PLAYING", "TRK NN/NN") + NpCoverMeta (capa 128dp + ART/ALB/FMT) +
+ * título VT323 grande com glow + dosPath dim + progresso (SegmentBar + tempos) + transporte
+ * (shuffle/prev/play-pause/next/repeat) + Spectrum. NÃO inclui (ficam no :app, fora desta fatia):
+ * Console/LYRICS, VolumeRow, Bookmark, e o layout de paisagem.
+ *
+ * CAPA (P7 fatia cover): no host LIVE a capa resolve assíncrono pelo [Cover] (iOS no-op → capa
+ * gerada). No gate A/B, [sampleCover] já vem RESOLVIDA (ver [sampleCoverArt]) e é desenhada no 1º
+ * frame — determinística nos dois lados. [tech] alimenta FMT/RATE/extra (default vazio no host).
  *
  * Primitivos vêm do contrato comum `com.mpx.player.ui.components` (CrtKit) + `...ui.theme`.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NowPlayingPanel(ui: PlayerUi, actions: NowPlayingActions) {
+fun NowPlayingPanel(
+    ui: PlayerUi,
+    actions: NowPlayingActions,
+    tech: TechInfo = TechInfo(),
+    sampleCover: CoverArt.Image? = null,
+) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         InvertedBar("> NOW PLAYING", trkLabel(ui))
+        NpCoverMeta(ui, tech, sampleCover)
         NpTitle(ui)
         NpProgress(ui, actions)
         NpTransport(ui, actions)
         Spectrum(ui.isPlaying)
+    }
+}
+
+/**
+ * Cópia fiel do NpCoverMeta do `:app` (NowPlayingScreen retrato): Row emoldurado com a capa 128dp
+ * (disco + scanlines) à esquerda e ART/ALB em cima, FMT/RATE/extra embaixo. Quando [sampleCover]
+ * != null (gate A/B), desenha a capa pré-resolvida direto; senão usa o [Cover] assíncrono normal.
+ */
+@Composable
+private fun NpCoverMeta(ui: PlayerUi, tech: TechInfo, sampleCover: CoverArt.Image?) {
+    val c = Mpx.colors
+    val t = ui.current
+    Row(Modifier.fillMaxWidth().frame().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val coverMod = Modifier.size(128.dp).frame(c.accent)
+        if (sampleCover != null) CoverImage(sampleCover, coverMod, scanlines = true)
+        else Cover(t, coverMod, disc = true, scanlines = true)
+        Column(Modifier.height(128.dp).weight(1f), verticalArrangement = Arrangement.SpaceBetween) {
+            Column {
+                Txt("ART -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(t?.artist?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
+                Txt("ALB -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(t?.album?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
+            }
+            Column {
+                Txt("FMT - ${tech.format} ${tech.bitrate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt("RATE - ${tech.sampleRate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(tech.extra.ifEmpty { "---" }, size = 12.sp, color = c.dim, lineHeight = 17.sp)
+            }
+        }
+    }
+}
+
+/**
+ * Desenha uma [CoverArt.Image] já resolvida, espelhando o visual do [Cover] (fundo painel, Image
+ * Crop com nearest-neighbor quando pixelated, scanlines por cima). Usado só pelo caminho do A/B,
+ * onde a capa é pré-resolvida fora de composição (render de 1 frame).
+ */
+@Composable
+private fun CoverImage(art: CoverArt.Image, modifier: Modifier, scanlines: Boolean) {
+    val c = Mpx.colors
+    Box(modifier.background(c.panel), contentAlignment = Alignment.Center) {
+        Image(
+            bitmap = art.bitmap,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            filterQuality = if (art.pixelated) FilterQuality.None else FilterQuality.Medium,
+        )
+        if (scanlines) Box(Modifier.fillMaxSize().scanlines(true))
     }
 }
 

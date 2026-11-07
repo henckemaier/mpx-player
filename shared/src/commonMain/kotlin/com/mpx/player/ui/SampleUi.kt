@@ -40,6 +40,9 @@ val sampleUi = PlayerUi(
     sourceLabel = "LIBRARY",
 )
 
+/** TechInfo fixa p/ o A/B: alimenta FMT/RATE/extra do NpCoverMeta de forma determinística. */
+val sampleTech = TechInfo(format = "MP3", bitrate = "320K", sampleRate = "44.1KHZ", extra = "STEREO")
+
 /** Ações no-op: o painel de amostra não dispara comportamento (host/harness só renderizam). */
 val noopActions = NowPlayingActions(
     toggle = {},
