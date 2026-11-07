@@ -74,22 +74,28 @@ PROFILES = {
             "ceiling": 50,                # APERTADO: known-good real = 0 (capa BIT-PERFEITA)
         },
     },
-    # LibraryScreen (filtro PLAYLISTS). TETOS = PLACEHOLDERS — a fatia c3 recalibra com os numeros
-    # REAIS do par CI (quando o baseline library-android.png existir). As ROIs/masks abaixo sao
-    # estimadas do layout (Column spacedBy 10 @ density 1f; SearchRow 44 / FilterRow 32 / grade /
-    # mini-player 44); c3 confirma contra os pixels reais.
+    # LibraryScreen (filtro PLAYLISTS). CALIBRADO (fatia c3) com os numeros REAIS do par CI (run
+    # 42378475448, f5c4826): estrutural AE_LIMPO=810 (pos-mascara do ♥) -> ceiling 810*~1.54; glow
+    # dev=39 -> bound 150 (folga modesta). O AE bruto era 1052 (modesto/fiel, ~ NowPlaying 1044
+    # num canvas MAIOR); a mascara do ♥ remove a UNICA nao-equivalencia conhecida (ver abaixo).
     "library": {
         "w": 393, "h": 600,
         "tol": 32,
-        "ceiling": 3000,            # PLACEHOLDER (c3 calibra) — tela cheia 393x600 > nowplaying
+        "ceiling": 1250,            # known-good LIMPO = 810 (pos-mascara ♥); ~1.54x de folga
         "masks": [
             (58, 20, 92, 46),       # CURSOR do SearchRow (bbox aprox. do cursor no inicio do campo)
+            (208, 403, 233, 427),   # ♥ (U+2665) do nome da NEON (col1 linha1): emoji COLORIDO no
+                                    # Android (fallback do sistema; a VT323 nao tem o glifo) x glifo
+                                    # do skiko no iOS -> regiao NAO-comparavel, mascarada na mesma
+                                    # categoria do cursor/medidores/spectrum. So o ♥ (x210-230,
+                                    # y405-424): NAO toca o texto "NEON" (verde, comeca em x242) nem
+                                    # a glow-ROI do RETRO (y226-252). Contribuia 242 px ao AE.
             # Sem mascara de overscroll: 4 itens (tile NOVA + 3 playlists) em 2 colunas = 2 linhas,
-            # cabem sem rolagem -> sem glow de overscroll. c3 adiciona se aparecer no par real.
+            # cabem sem rolagem -> sem glow de overscroll (confirmado no par real).
         ],
-        "title_roi": (205, 226, 379, 252),  # PLACEHOLDER: nome da 1a playlist ("RETRO", col1 linha0)
+        "title_roi": (205, 226, 379, 252),  # nome da 1a playlist ("RETRO", col1 linha0); limpo (dev=39)
         "glow_t": 18,
-        "glow_bound": 600,          # PLACEHOLDER (c3 calibra)
+        "glow_bound": 150,          # known-good dev=39; folga modesta (lit-area de PRESENCA do nome)
         "cover": None,              # Library NAO tem a capa 1-bit -> sem check COVER
     },
 }
