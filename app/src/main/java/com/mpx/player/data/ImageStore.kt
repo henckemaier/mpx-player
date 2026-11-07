@@ -14,7 +14,7 @@ import java.util.UUID
 /**
  * Copia uma imagem escolhida (content Uri) para filesDir/<subdir>, reduzida (~512px) e em JPEG,
  * para servir de foto de playlist ou capa personalizada de faixa. O filtro visual (dither/ASCII/
- * mono) é aplicado depois, no render, pelo [CoverArtLoader].
+ * mono) é aplicado depois, no render, pelo pipeline de capa (`CoverProcessor`/[AndroidAlbumArtSource]).
  */
 class ImageStore(private val context: Context) {
 

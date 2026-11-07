@@ -41,7 +41,7 @@ data class DownloadState(
 /**
  * Baixa áudio (MP3) de links do YouTube Music via yt-dlp (youtubedl-android), embute capa e
  * metadados, busca letra sincronizada no LRCLIB e publica tudo no MediaStore (Music/MPX) para
- * aparecer na biblioteca. A capa sai filtrada no estilo do app pelo [CoverArtLoader] no render.
+ * aparecer na biblioteca. A capa sai filtrada no estilo do app pelo pipeline de capa no render.
  */
 class Downloader(
     private val context: Context,

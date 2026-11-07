@@ -5,8 +5,9 @@ import android.content.Context
 import com.mpx.player.data.AndroidLibraryRepository
 import com.mpx.player.data.AndroidLyricsRepository
 import com.mpx.player.data.AndroidPlaylistRepository
+import com.mpx.player.data.AndroidAlbumArtSource
 import com.mpx.player.data.AndroidSettingsRepository
-import com.mpx.player.data.CoverArtLoader
+import com.mpx.player.data.CoverLoader
 import com.mpx.player.data.Downloader
 import com.mpx.player.data.OverrideRepository
 import com.mpx.player.data.PlaylistImporter
@@ -28,7 +29,7 @@ class AndroidAppContainer(val context: Context) : AppContainer {
     override val lyrics = AndroidLyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)
     override val playlists = AndroidPlaylistRepository(context)
-    val covers = CoverArtLoader(context)
+    val covers = CoverLoader(AndroidAlbumArtSource(context))
     override val audioPlayer: AudioPlayer = createAudioPlayer(PlatformContext(context))
     val downloader = Downloader(context, library, lyrics, settings)
     val updater = UpdateRepository(context)

@@ -52,6 +52,7 @@ import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.MpxHeader
 import com.mpx.player.ui.components.MpxNav
 import com.mpx.player.ui.components.MpxNavRail
+import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.components.Tab
 import com.mpx.player.ui.components.scanlines
 import com.mpx.player.ui.NowPlayingActions
@@ -82,7 +83,12 @@ class MainActivity : ComponentActivity() {
         container.audioPlayer.connect()
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
-            MpxTheme(settings) { MpxRoot(container, settings) }
+            MpxTheme(settings) {
+                // Provê o loader de capa (Android: MediaStore + arte embutida) ao Cover comum.
+                CompositionLocalProvider(LocalCoverLoader provides container.covers) {
+                    MpxRoot(container, settings)
+                }
+            }
         }
     }
 

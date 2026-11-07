@@ -10,14 +10,15 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
@@ -31,15 +32,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-import com.mpx.player.MpxApp
+import com.mpx.player.data.AlbumArtSource
 import com.mpx.player.data.CoverArt
+import com.mpx.player.data.CoverLoader
 import com.mpx.player.model.Track
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxColors
-import androidx.compose.ui.platform.LocalContext
-import java.io.File
 import kotlin.math.abs
 import kotlin.math.min
+
+/**
+ * Pipeline de capa migrado p/ `commonMain` no porte iOS (P7 fatia cover). MESMO FQN do antigo
+ * `:app` → os call-sites (Library/Queue/NowPlaying) não mudam. A fonte de bitmap deixa de vir de
+ * `(LocalContext as MpxApp).container.covers` e passa pelo [LocalCoverLoader] (o host Android
+ * provê a impl com MediaStore; o A/B iOS provê a sua; sem provedor, cai na capa gerada).
+ */
+
+/**
+ * Loader de capa injetado pelo host. Default = fonte vazia → tudo cai na [GeneratedCover] (seguro
+ * p/ previews/testes sem host). O `:app` sobrepõe com `CoverLoader(AndroidAlbumArtSource(...))`.
+ */
+val LocalCoverLoader = staticCompositionLocalOf { CoverLoader(NullAlbumArtSource) }
+
+private object NullAlbumArtSource : AlbumArtSource {
+    override suspend fun sourceArt(albumId: Long, trackUri: String): ImageBitmap? = null
+    override suspend fun sourceFile(path: String): ImageBitmap? = null
+}
 
 /**
  * Capa conforme CFG > ESTILO DA CAPA: 0 DISCO (vetorial gerada), 1 DITHER (arte real 1-bit),
@@ -49,14 +67,14 @@ import kotlin.math.min
 fun Cover(track: Track?, modifier: Modifier = Modifier, disc: Boolean = false, scanlines: Boolean = false) {
     val st = Mpx.style
     val c = st.c
-    val loader = (LocalContext.current.applicationContext as MpxApp).container.covers
+    val loader = LocalCoverLoader.current
     val art by produceState<CoverArt?>(null, track?.albumId, track?.coverOverride, st.coverStyle, st.monoCovers, c.accent, c.bg) {
         val t = track
         value = when {
             t == null -> null
             // Capa personalizada é escolha explícita do usuário: aparece em qualquer estilo.
             t.coverOverride != null ->
-                loader.loadFile(File(t.coverOverride), st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
+                loader.loadFile(t.coverOverride, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
             st.coverStyle == 0 -> null
             else -> loader.load(t.albumId, t.uri, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
         }
@@ -64,7 +82,7 @@ fun Cover(track: Track?, modifier: Modifier = Modifier, disc: Boolean = false, s
     Box(modifier.background(c.panel), contentAlignment = Alignment.Center) {
         when (val a = art) {
             is CoverArt.Image -> Image(
-                bitmap = a.bitmap.asImageBitmap(),
+                bitmap = a.bitmap,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -82,15 +100,15 @@ fun Cover(track: Track?, modifier: Modifier = Modifier, disc: Boolean = false, s
 fun PlaylistCover(photo: String?, name: String, modifier: Modifier = Modifier) {
     val st = Mpx.style
     val c = st.c
-    val loader = (LocalContext.current.applicationContext as MpxApp).container.covers
+    val loader = LocalCoverLoader.current
     val art by produceState<CoverArt?>(null, photo, st.coverStyle, st.monoCovers, c.accent, c.bg) {
         value = if (photo == null) null
-        else loader.loadFile(File(photo), st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
+        else loader.loadFile(photo, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
     }
     Box(modifier.background(c.panel), contentAlignment = Alignment.Center) {
         when (val a = art) {
             is CoverArt.Image -> Image(
-                bitmap = a.bitmap.asImageBitmap(),
+                bitmap = a.bitmap,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
