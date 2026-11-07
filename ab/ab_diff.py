@@ -5,7 +5,7 @@
 # ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
 # espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# QUATRO PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
+# CINCO PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
 #   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
 #   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
@@ -17,7 +17,11 @@
 #   nav        (393x200) — MpxShell com conteúdo DUMMY (gateia o CHROME de navegação: barra MpxNav
 #                          + cabeçalho MpxHeader, com abas PLAY/LIB/CFG ativas e QUEUE/EQ apagadas).
 #                          Checks: ESTRUTURAL + GLOW (presença do texto display das abas, SEM halo —
-#                          como o perfil library). SEM cover. Tetos PLACEHOLDER (calibrados no c3).
+#                          como o perfil library). SEM cover. Calibrado na fatia c3 (AE limpo=196).
+#   eq         (393x720) — EqScreen (EQUALIZER, retrato: Preset/BandInfo/Bands 10x13/Preamp/Effects/
+#                          Buttons). Dominada por FILLS de segmento (como o nav) + rotulos pequenos.
+#                          Checks: ESTRUTURAL + GLOW (presença dos fills verdes das bandas, SEM halo).
+#                          SEM cover. Tetos PLACEHOLDER (calibrados no c3; masks decididas MEDINDO).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -50,7 +54,7 @@
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
 # Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
-#   perfil ∈ {nowplaying (default), library, settings, nav}.  O check COVER so roda se o perfil define cover.
+#   perfil ∈ {nowplaying (default), library, settings, nav, eq}.  O check COVER so roda se o perfil define cover.
 #   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
@@ -182,6 +186,31 @@ PROFILES = {
         "glow_t": 18,
         "glow_bound": 190,          # known-good dev=124 (presenca das labels); ~1.53x de folga
         "cover": None,              # chrome de nav nao tem capa 1-bit -> sem check COVER
+    },
+    # EqScreen (EQUALIZER, retrato). 5o par A/B (P7 fatia eq). Canvas ALTO (393x720): Header(InvertedBar
+    # +[ON]) + PresetRow(5 pilulas, CUSTOM filled) + BandInfo + Bands(10 bandas x 13 segmentos, curva
+    # "sorriso") + Preamp(SegmentBar +/-) + Effects(3 ToggleRow) + Buttons(RESET/SAVE). ESTATICA
+    # (sem cursor/marquee/spectrum/animacao) -> 1o frame = estado final.
+    #
+    # Dominada por FILLS de segmento (barras das bandas + preamp) que batem bem (como o nav), mas tem
+    # rotulos PEQUENOS (freq labels VT323 9sp, preamp dB/fmt1 em JB mono, labels dos ToggleRow). O
+    # check GLOW mede a PRESENCA/EXTENSAO do verde dos fills das bandas (a EQ NAO tem glow=true -> sem
+    # halo a colapsar; sensibilidade de presenca estilo nav/library).
+    #
+    # TETOS PLACEHOLDER (FOLGADOS): a c3 MEDE o clean AE real do par CI e calibra ceiling=clean*~1.5 +
+    # glow_bound. masks=[] a principio: SE o AE vier limpo (tipo nav ~196) fica sem mascara; SE houver
+    # AA de texto pequeno (tipo Settings) a c3 poe mascara CIRURGICA so no texto (disjunta dos fills/
+    # barras), teto no CLEAN NUNCA inflado. Placeholder folgado p/ a run do baseline nao dar vermelho
+    # espurio (o par so vira gate duro quando o baseline landar).
+    "eq": {
+        "w": 393, "h": 720,
+        "tol": 32,
+        "ceiling": 20000,           # PLACEHOLDER folgado (canvas alto, fills+texto) — c3 calibra no clean real
+        "masks": [],                # decidir MEDINDO o clean AE (espero limpo tipo nav; se texto-AA, c3 mascara so-texto)
+        "title_roi": (14, 128, 379, 320),  # faixa das BANDAS (fills de segmento verdes) — presenca; c3 refina
+        "glow_t": 18,
+        "glow_bound": 20000,        # PLACEHOLDER folgado (extensao do verde das bandas) — c3 calibra
+        "cover": None,              # EQ nao tem a capa 1-bit -> sem check COVER
     },
 }
 

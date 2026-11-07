@@ -146,6 +146,15 @@ jobs:
           else
             echo "::warning::PNG iOS (nav) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
           fi
+          # Parse do 5o PNG: "A/B eq: PNG <n> B, escrito=<bool> em <path>" (EqScreen)
+          PNG_EQ=$(grep -oE 'em (/[^ ]+eq-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (eq) resolvido: '$PNG_EQ'"
+          if [ -n "$PNG_EQ" ] && [ -f "$PNG_EQ" ]; then
+            cp "$PNG_EQ" ab/eq-ios.png
+            echo "Render A/B iOS (eq) copiado p/ ab/eq-ios.png ($(stat -f%z ab/eq-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (eq) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
 
       # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
       # Android commitado (ab/nowplaying-android.png), com MASCARA na faixa dinamica
@@ -192,6 +201,16 @@ jobs:
           else
             echo "::warning::baseline ab/nav-android.png ausente (captura coordenada pelo Bigorna) — diff do Nav PULADO nesta run. Vira gate duro quando o baseline for commitado."
           fi
+          # Par Eq (perfil 'eq': estrutural + glow, SEM cover) — GATE DURO assim que o baseline existir.
+          # MESMA cadencia de Library/Settings/Nav: o baseline (ab/eq-android.png) e um commit DELIBERADO
+          # coordenado pelo Bigorna (captura por adb na AbEqBaselineActivity). ENQUANTO nao existir, o
+          # diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG entrar no repo, vira gate
+          # duro. Tetos placeholder do perfil 'eq' = calibrados no c3 (masks decididas MEDINDO o clean).
+          if [ -f ab/eq-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/eq-android.png ab/eq-ios.png eq
+          else
+            echo "::warning::baseline ab/eq-android.png ausente (captura coordenada pelo Bigorna) — diff do Eq PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
 
       # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
       # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
@@ -211,6 +230,8 @@ jobs:
             ab/settings-android.png
             ab/nav-ios.png
             ab/nav-android.png
+            ab/eq-ios.png
+            ab/eq-android.png
             ab/ios-test.log
           if-no-files-found: warn
 
