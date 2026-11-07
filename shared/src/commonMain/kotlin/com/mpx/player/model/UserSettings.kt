@@ -1,9 +1,9 @@
 package com.mpx.player.model
 
-// Track, Album e Artist foram movidos para :shared/commonMain (com.mpx.player.model), com
-// Track.uri neutralizado para String (comum a Android/iOS).
-// Playlist, TrackOverride, EqPresets e LyricLine também vivem em :shared/commonMain.
-
+// Movido de :app (model/Models.kt) para :shared/commonMain na fatia fina de UI (P7): o
+// MpxTheme — agora em commonMain — recebe UserSettings, então o modelo precisa ser comum.
+// Mesmo pacote/FQN (com.mpx.player.model.UserSettings) do original, logo os call-sites do
+// :app resolvem sem edição. Só referencia EqSettings, que já vive aqui no :shared.
 data class UserSettings(
     val theme: Int = 0,
     /** Cor de destaque personalizada (ARGB). Usada quando theme == CUSTOM_THEME. */
@@ -21,6 +21,3 @@ data class UserSettings(
     val playlistsImported: Int = 0,
     val eq: EqSettings = EqSettings(),
 )
-
-// EqSettings e EqPresets foram movidos para :shared/commonMain (com.mpx.player.model).
-// UserSettings (acima) referencia EqSettings do :shared (mesmo pacote).

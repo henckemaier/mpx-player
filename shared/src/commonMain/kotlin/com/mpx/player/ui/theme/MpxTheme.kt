@@ -7,11 +7,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import com.mpx.player.R
 import com.mpx.player.model.UserSettings
+import com.mpx.player.resources.Res
+import com.mpx.player.resources.jetbrains_mono_regular
+import com.mpx.player.resources.jetbrains_mono_semibold
+import com.mpx.player.resources.vt323
+import org.jetbrains.compose.resources.Font
 
 @Immutable
 data class Phosphor(val name: String, val accent: Color, val dim: Color, val line: Color)
@@ -67,10 +70,17 @@ data class MpxStyle(
     val monoCovers: Boolean,
 )
 
-val Vt323 = FontFamily(Font(R.font.vt323))
-val JetBrainsMono = FontFamily(
-    Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
-    Font(R.font.jetbrains_mono_semibold, FontWeight.SemiBold),
+// As fontes viram Compose Resources (comuns a Android/iOS). `org.jetbrains.compose.resources.Font`
+// é @Composable, então as FontFamilies NÃO podem mais ser `val` top-level (como no :app com
+// R.font); são construídas dentro de @Composable e injetadas no MpxStyle pelo MpxTheme. Mesmo
+// padrão do SmokeScreen (P7 F7.1).
+@Composable
+fun vt323Family(): FontFamily = FontFamily(Font(Res.font.vt323))
+
+@Composable
+fun jetBrainsMonoFamily(): FontFamily = FontFamily(
+    Font(Res.font.jetbrains_mono_regular, FontWeight.Normal),
+    Font(Res.font.jetbrains_mono_semibold, FontWeight.SemiBold),
 )
 
 fun colorsFor(theme: Int, oled: Boolean, customArgb: Int? = null): MpxColors {
@@ -91,8 +101,11 @@ fun colorsFor(theme: Int, oled: Boolean, customArgb: Int? = null): MpxColors {
     )
 }
 
+// O default do LocalMpx vive fora de @Composable (staticCompositionLocalOf), então não pode
+// chamar Font() @Composable: cai no fallback FontFamily.Monospace. Na prática o MpxTheme sempre
+// embrulha a UI e sobrepõe com as fontes reais (vt323/jetBrainsMono) via CompositionLocalProvider.
 val LocalMpx = staticCompositionLocalOf {
-    MpxStyle(colorsFor(0, false), Vt323, 1f, JetBrainsMono, glow = true, cursor = true, scanlines = true, coverStyle = 0, monoCovers = true)
+    MpxStyle(colorsFor(0, false), FontFamily.Monospace, 1f, FontFamily.Monospace, glow = true, cursor = true, scanlines = true, coverStyle = 0, monoCovers = true)
 }
 
 /** True quando a tela está deitada; definido no shell e lido pelas telas para o layout de paisagem. */
@@ -100,16 +113,18 @@ val LocalLandscape = staticCompositionLocalOf { false }
 
 @Composable
 fun MpxTheme(settings: UserSettings, content: @Composable () -> Unit) {
-    val style = remember(settings) {
+    val vt323 = vt323Family()
+    val jetBrainsMono = jetBrainsMonoFamily()
+    val style = remember(settings, vt323, jetBrainsMono) {
         MpxStyle(
             c = colorsFor(settings.theme, settings.oled, settings.customColor),
             display = when (settings.font) {
-                1 -> JetBrainsMono
+                1 -> jetBrainsMono
                 2 -> FontFamily.Monospace
-                else -> Vt323
+                else -> vt323
             },
             displayScale = if (settings.font == 0) 1f else 0.66f,
-            mono = JetBrainsMono,
+            mono = jetBrainsMono,
             glow = settings.glow,
             cursor = settings.cursor,
             scanlines = settings.scanlines,

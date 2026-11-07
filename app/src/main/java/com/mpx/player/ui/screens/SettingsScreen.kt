@@ -69,10 +69,10 @@ import com.mpx.player.ui.components.frame
 import com.mpx.player.ui.components.glow
 import com.mpx.player.ui.components.tap
 import com.mpx.player.ui.theme.CUSTOM_THEME
-import com.mpx.player.ui.theme.JetBrainsMono
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.Phosphors
-import com.mpx.player.ui.theme.Vt323
+import com.mpx.player.ui.theme.jetBrainsMonoFamily
+import com.mpx.player.ui.theme.vt323Family
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -126,7 +126,11 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
         if (open == 1) SectionBody {
             Group("FONTE DO SISTEMA") {
                 Segmented(listOf("VT323", "JB MONO", "COURIER"), s.font, vm::setFont) { i, label, fg ->
-                    val fam = when (i) { 0 -> Vt323; 1 -> JetBrainsMono; else -> FontFamily.Monospace }
+                    // vt323Family/jetBrainsMonoFamily são @Composable (Font via Compose Resources);
+                    // chamadas incondicionalmente e só então escolhidas, evitando composable em `when`.
+                    val vt = vt323Family()
+                    val jb = jetBrainsMonoFamily()
+                    val fam = when (i) { 0 -> vt; 1 -> jb; else -> FontFamily.Monospace }
                     Txt(label, size = if (i == 0) 20.sp else 11.sp, color = fg, family = fam, align = TextAlign.Center)
                 }
             }
