@@ -2,14 +2,9 @@ package com.mpx.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -17,8 +12,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeUIViewController
 import com.mpx.player.data.CoverLoader
 import com.mpx.player.data.IosAlbumArtSource
@@ -26,10 +23,16 @@ import com.mpx.player.data.IosTechInfoReader
 import com.mpx.player.di.AppContainer
 import com.mpx.player.di.createAppContainer
 import com.mpx.player.ui.LibraryViewModel
+import com.mpx.player.ui.MpxShell
+import com.mpx.player.ui.NowPlayingActions
+import com.mpx.player.ui.NowPlayingPanel
 import com.mpx.player.ui.PlayerViewModel
 import com.mpx.player.ui.SettingsViewModel
+import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.components.TextButton
+import com.mpx.player.ui.nav.Destination
+import com.mpx.player.ui.nav.NavState
 import com.mpx.player.ui.screens.LibraryActions
 import com.mpx.player.ui.screens.LibraryScreen
 import com.mpx.player.ui.screens.SettingsActions
@@ -43,23 +46,27 @@ import platform.UIKit.UIViewController
  * Ponto de entrada iOS do :shared. O host SwiftUI (iosApp/) consome este símbolo como
  * `MainViewControllerKt.MainViewController()` via `import Shared`.
  *
- * Fatia LIBRARY (P7): o host renderiza a [LibraryScreen] REAL sobre um [LibraryViewModel]
- * (comum) ligado ao container iOS, com browse real (filtro/busca/sort/play/playlist). Os 3
- * gatilhos de diálogo (edição/criação/exclusão) são no-op no iOS (dependem de device/Uri — TODO).
- * O mini-player reusa `vm.ui` do [PlayerViewModel] já ligado. O teste A/B offscreen
- * (NowPlayingPanelRenderTest) é INDEPENDENTE do host (renderiza `sampleUi`) e segue intacto.
+ * Fatia NAV (P7): o host troca o antigo seletor-de-raiz MÍNIMO (2 botões Library<->Settings da
+ * fatia settings) pelo [MpxShell] COMUM — a MESMA máquina de navegação do `:app` (back-stack puro
+ * [NavState] + chrome [com.mpx.player.ui.components.MpxNav]/[com.mpx.player.ui.components.MpxHeader]).
+ * O mapa de destinos no iOS tem SÓ PLAY/LIBRARY/CONFIG (as telas já portadas); QUEUE/EQ ficam de
+ * fora e DESABILITADOS (`enabled`) → aparecem APAGADOS e não-tapáveis na barra (sem aba morta). O
+ * back do iOS é um BOTÃO "< BACK" no cabeçalho (NÃO há BackHandler no iOS) visível quando
+ * [NavState.canGoBack] → `nav.pop()` (política pop PLENO; swipe-back nativo = follow-up).
  *
- * Fatia SETTINGS (P7): seletor-de-raiz MÍNIMO (decisão A do Maestro) — uma barrinha CRT de 2 botões
- * alterna entre [LibraryScreen] e [SettingsScreen]. NÃO é navegação real (sem back-stack, sem
- * transição; a nav real é fatia futura) — apenas um `root` em `remember`. Nenhum host regride: a
- * Biblioteca continua acessível. O [SettingsViewModel] comum persiste em NSUserDefaults (toggles de
- * tema/cor/fonte aparecem AO VIVO porque o [MpxTheme] é dirigido pelo `settings` REAL do VM). Os
- * slots Android-only (BAIXAR/IMPORTAR/UPDATE/SAÍDA) e CHECK UPDATE/REBOOT ficam null no iOS → somem
- * (nenhum botão morto). ESPERADO no simulador: toggles persistem; contadores de biblioteca 0
- * (MPMediaQuery vazia). Registro, não bug.
+ * O [SettingsViewModel] comum persiste em NSUserDefaults (toggles de tema/cor/fonte aparecem AO
+ * VIVO porque o [MpxTheme] é dirigido pelo `settings` REAL do VM). O cabeçalho usa um [HeaderLabel]
+ * simples (o nome do destino) — Battery/FILES são Android-only. `version` fixa "1.0" (NÃO
+ * BuildConfig → determinístico).
  *
- * ESPERADO no simulador: a biblioteca iOS é vazia (MPMediaQuery sem device) → `LibraryUi` cai em
- * `totalFiles == 0` ("> 0 FILES / NENHUM ÁUDIO..."). Conteúdo real só no iPhone. Registro, não falha.
+ * Slot PLAY = [NowPlayingPanel] (o MESMO bloco do gate A/B) sobre o [PlayerViewModel] já ligado;
+ * controles plenos (volume/favorito/console) = fatia futura (NowPlayingScreen-cheia). Slot LIBRARY
+ * = [LibraryScreen] (browse real). Slot CONFIG = [SettingsScreen] com slots Android = null.
+ *
+ * ESPERADO no simulador: nav entre PLAY/LIBRARY/CONFIG funciona; QUEUE/EQ apagados; a biblioteca
+ * iOS é vazia (MPMediaQuery sem device) → contadores 0. Conteúdo real só no iPhone. Registro, não
+ * falha. O teste A/B offscreen ([NowPlayingPanelRenderTest]/[NavShellRenderTest]) é INDEPENDENTE do
+ * host (renderiza `sampleUi`/dummy) e segue intacto.
  *
  * Mora em iosMain → só compila em host macOS; no Windows o source set é ignorado.
  */
@@ -81,17 +88,18 @@ private val settingsViewModel: SettingsViewModel by lazy { SettingsViewModel(app
 // NowPlayingPanelRenderTest + sampleCoverArt). Singleton de arquivo, criado 1x.
 private val coverLoader: CoverLoader by lazy { CoverLoader(IosAlbumArtSource()) }
 
-/** Raiz exibida pelo host iOS. Seletor mínimo (não é back-stack/navegação real — fatia futura). */
-private enum class Root { LIBRARY, SETTINGS }
-
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val libUi by libraryViewModel.ui.collectAsState()
     val playerUi by playerViewModel.ui.collectAsState()
+    val tech by playerViewModel.tech.collectAsState()
     val settingsUi by settingsViewModel.ui.collectAsState()
     // VMs singletons estáveis → as ações (method refs) são montadas uma vez, não a cada recomposição.
     val libActions = remember { iosLibActions(libraryViewModel) }
     val setActions = remember { iosSettingsActions(settingsViewModel) }
-    var root by remember { mutableStateOf(Root.LIBRARY) }
+    val playerActions = remember { iosPlayerActions(playerViewModel) }
+    // Back-stack puro ([NavState]), igual ao :app (lá é rememberSaveable; no iOS não há recriação de
+    // Activity, remember basta). onSelect = goTo (reordena-sem-dup).
+    var nav by remember { mutableStateOf(NavState()) }
     // MpxTheme dirigido pelo `settings` REAL do VM: os toggles de tema/cor/fonte da tela CONFIG
     // recolorem a UI inteira ao vivo (não um UserSettings() fixo).
     MpxTheme(settingsUi.settings) {
@@ -99,32 +107,40 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             LocalCoverLoader provides coverLoader,
             LocalLandscape provides false,
         ) {
-            Column(Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp)) {
-                // Barrinha CRT de troca de raiz (SEM back-stack/transição; não é nav real).
-                Row(
-                    Modifier.fillMaxWidth().height(40.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    TextButton(
-                        "BIBLIOTECA", Modifier.weight(1f).fillMaxHeight(),
-                        filled = root == Root.LIBRARY, display = true,
-                        onClick = { root = Root.LIBRARY },
-                    )
-                    TextButton(
-                        "CONFIG", Modifier.weight(1f).fillMaxHeight(),
-                        filled = root == Root.SETTINGS, display = true,
-                        onClick = { root = Root.SETTINGS },
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Box(Modifier.fillMaxSize()) {
-                    when (root) {
-                        Root.LIBRARY -> LibraryScreen(libUi, playerUi, libActions)
+            // Wrapper do host (bg + padding + spacedBy 10dp): o MpxShell retrato emite cabeçalho +
+            // barra + conteúdo em sequência e conta com o espaçamento do Column pai (mesmo molde do :app).
+            Column(
+                Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MpxShell(
+                    nav = nav,
+                    destinations = mapOf(
+                        // Slot PLAY: painel comum (display + transporte trivial) sobre o VM ligado.
+                        Destination.PLAY to { NowPlayingPanel(playerUi, playerActions, tech) },
+                        Destination.LIBRARY to { LibraryScreen(libUi, playerUi, libActions) },
                         // Slots Android = null (BAIXAR/IMPORTAR/UPDATE/SAÍDA somem); onReboot/
                         // onCheckUpdate = null (linha de botões some). Sem botão morto no iOS.
-                        Root.SETTINGS -> SettingsScreen(settingsUi, setActions, onReboot = null)
-                    }
-                }
+                        Destination.CONFIG to { SettingsScreen(settingsUi, setActions, onReboot = null) },
+                    ),
+                    onSelect = { nav = nav.goTo(it) },
+                    header = {
+                        // Back do iOS (política pop PLENO): botão no cabeçalho, visível só quando há
+                        // para onde voltar. NÃO há BackHandler no iOS; swipe nativo = follow-up.
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (nav.canGoBack) {
+                                TextButton("< BACK", display = true, size = 11.sp, onClick = { nav = nav.pop() })
+                            }
+                            HeaderLabel(nav.current.label)
+                        }
+                    },
+                    version = "1.0",
+                    // QUEUE/EQ ainda não portados → apagados e não-tapáveis (sem aba morta).
+                    enabled = { it == Destination.PLAY || it == Destination.LIBRARY || it == Destination.CONFIG },
+                )
             }
         }
     }
@@ -134,7 +150,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
  * [LibraryActions] do host iOS: browse REAL delegado ao [LibraryViewModel] (filtro/busca/sort/
  * play álbum-artista-faixa-playlist/abrir-fechar/remover). Os 3 gatilhos de diálogo
  * (onTrackLong/onNewPlaylist/onEditPlaylist) são NO-OP — a edição/exclusão depende de device/Uri
- * (TODO). `onOpenPlayer` é no-op nesta fatia (navegação entra depois).
+ * (TODO). `onOpenPlayer` é no-op (a navegação entre abas agora é a barra MpxNav).
  */
 private fun iosLibActions(vm: LibraryViewModel): LibraryActions = LibraryActions(
     onFilter = vm::setFilter,
@@ -172,4 +188,25 @@ private fun iosSettingsActions(vm: SettingsViewModel): SettingsActions = Setting
     onToggleCrossfade = vm::toggleCrossfade,
     onClearMessage = vm::clearMessage,
     onScan = vm::rescan,
+)
+
+/**
+ * [NowPlayingActions] do host iOS p/ o slot PLAY ([NowPlayingPanel]). O painel usa só transporte +
+ * seek (toggle/next/previous/seek/shuffle/repeat); volume/favorito/playlist ficam fora do painel
+ * (Console/VolumeRow = fatia futura NowPlayingScreen-cheia), mas são ligados ao VM mesmo assim
+ * (inócuos se não renderizados). `openLibrary` é no-op: a navegação entre abas agora é a barra
+ * MpxNav (o botão interno do painel ficaria redundante).
+ */
+private fun iosPlayerActions(vm: PlayerViewModel): NowPlayingActions = NowPlayingActions(
+    toggle = vm::toggle,
+    next = vm::next,
+    previous = vm::previous,
+    seek = vm::seek,
+    shuffle = vm::toggleShuffle,
+    repeat = vm::cycleRepeat,
+    setVolume = vm::setVolume,
+    mute = vm::toggleMute,
+    openLibrary = {},
+    toggleFavorite = vm::toggleFavorite,
+    addToPlaylist = vm::addCurrentToPlaylist,
 )

@@ -5,7 +5,7 @@
 # ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
 # espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# TRÊS PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
+# QUATRO PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
 #   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
 #   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
@@ -14,6 +14,10 @@
 #   settings   (393x760) — SettingsScreen (CONFIG.SYS, seção CORES aberta via initialOpen=2).
 #                          Checks: ESTRUTURAL (R-A: MÁSCARA-DE-TEXTO, gateia o CHROME) + GLOW
 #                          (PREVIEW "SIGNAL//DECAY_"). SEM cover. Calibrado na fatia c3.
+#   nav        (393x200) — MpxShell com conteúdo DUMMY (gateia o CHROME de navegação: barra MpxNav
+#                          + cabeçalho MpxHeader, com abas PLAY/LIB/CFG ativas e QUEUE/EQ apagadas).
+#                          Checks: ESTRUTURAL + GLOW (presença do texto display das abas, SEM halo —
+#                          como o perfil library). SEM cover. Tetos PLACEHOLDER (calibrados no c3).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -46,7 +50,7 @@
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
 # Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
-#   perfil ∈ {nowplaying (default), library, settings}.  O check COVER so roda se o perfil define cover.
+#   perfil ∈ {nowplaying (default), library, settings, nav}.  O check COVER so roda se o perfil define cover.
 #   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
@@ -151,6 +155,30 @@ PROFILES = {
         "glow_t": 18,
         "glow_bound": 1650,         # known-good dev=1093 (ROI nova); folga modesta ~1.5x
         "cover": None,              # CONFIG nao tem a capa 1-bit -> sem check COVER
+    },
+    # MpxShell com conteudo DUMMY ("CONTENT"): gateia o CHROME de navegacao (barra MpxNav horizontal
+    # + cabecalho MpxHeader), 4o par A/B (P7 fatia nav). Canvas PEQUENO (393x200): cabecalho (~31px)
+    # + barra (44dp) + placeholder (80dp) + espacamentos/padding. A barra tem POUCO texto (so os
+    # labels VT323 display das abas, que batem como os headers de secao dos outros perfis) -> SEM
+    # mascara a principio (masks=[]); se sobrar AA de texto do header/labels, a c3 ajusta.
+    #
+    # Checks: ESTRUTURAL (presenca/posicao da moldura da barra, dividers entre abas, accent-fill da
+    # aba PLAY selecionada, texto apagado das abas QUEUE/EQ desabilitadas, moldura do cabecalho) +
+    # GLOW (a barra NAO tem glow=true -> a ROI mede a PRESENCA/EXTENSAO do verde display das abas,
+    # como no perfil library; NAO ha halo a colapsar). SEM cover.
+    #
+    # TETOS PLACEHOLDER (folgados): o baseline Android ainda nao existe no commit c2 (captura
+    # DELIBERADA em commit separado). A c3 calibra ceiling/glow_bound/title_roi/masks com os pixels
+    # REAIS do par CI (clean * ~1.5) + prova de regressao. NAO inflar p/ encobrir layout.
+    "nav": {
+        "w": 393, "h": 200,
+        "tol": 32,
+        "ceiling": 6000,            # PLACEHOLDER folgado (chrome-only num canvas pequeno) — c3 calibra
+        "masks": [],                # sem mascara a principio (so labels display, que batem) — c3 ajusta
+        "title_roi": (10, 55, 383, 95),  # banda dos labels da barra MpxNav (presenca do verde display)
+        "glow_t": 18,
+        "glow_bound": 3000,         # PLACEHOLDER folgado (extensao do verde da barra) — c3 calibra
+        "cover": None,              # chrome de nav nao tem capa 1-bit -> sem check COVER
     },
 }
 
