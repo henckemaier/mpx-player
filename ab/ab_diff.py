@@ -1,71 +1,98 @@
 #!/usr/bin/env python3
-# A/B PIXEL-DIFF — GATE DURO da fidelidade visual iOS x Android (P7, fatias "estado real" + "cover").
+# A/B PIXEL-DIFF — GATE DURO da fidelidade visual iOS x Android (P7).
 #
-# Compara o render OFFSCREEN do NowPlayingPanel no iOS/Skia (ab/nowplaying-ios.png, gerado
-# determinist. pelo NowPlayingPanelRenderTest via ImageComposeScene 393x420 @ Density(1f)) com o
-# BASELINE Android commitado (ab/nowplaying-android.png, capturado 1x pela AbBaselineActivity no
-# mesmo tamanho/densidade). Falha (exit 1) se divergirem.
+# Compara o render OFFSCREEN de uma tela no iOS/Skia (gerado determinist. por um *RenderTest via
+# ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
+# espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# TRES CHECKS, todos tem que passar:
+# DOIS PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
-#   (1) ESTRUTURAL (layout/posicao) — AE mascarado com tolerancia de vizinhanca.
-#   (2) GLOW (o halo do text-shadow do titulo) — area iluminada da ROI do titulo (lit-area).
-#   (3) COVER (fidelidade da capa 1-bit) — AE APERTADO na ROI da capa dithered.
+#   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
+#   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
+#                          Checks: ESTRUTURAL + GLOW. SEM cover (a grade de playlists usa
+#                          PlaylistCover(photo=null) → GeneratedCover vetorial, não a capa 1-bit).
+#
+# As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
+# reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
 #
 # ----------------------------------------------------------------------- CHECK (1) ESTRUTURAL
 # AE (Absolute Error) mascarado = nº de pixels divergentes, com tolerancia de vizinhanca ±1px (um
 # pixel só conta se diverge de TODOS os 9 vizinhos 3x3 do outro render -> absorve o shift sub-pixel
-# da VT323 no Skia / ruido de AA legitimo) e TOL 32/canal. MASCARA (retangulos pretos nos DOIS
-# antes de comparar) sobre: a CAPA (fidelidade dela é cobrada no check (3), regiao DISJUNTA) e a
-# faixa DINAMICA (cursor "_", medidores L/R, barras do Spectrum clipadas no rodape). Pega quebras
-# de LAYOUT/posicao do resto do painel (InvertedBar, ART/ALB/FMT, titulo, progresso, transporte).
+# da VT323 no Skia / ruido de AA legitimo) e TOL/canal. MASCARA (retangulos pretos nos DOIS antes
+# de comparar) sobre regioes cobertas por outro check (a capa no nowplaying) e sobre a faixa
+# DINAMICA (cursor, medidores, barras animadas). Pega quebras de LAYOUT/posicao.
 #
 # ------------------------------------------------------------------------- CHECK (2) GLOW
-# Na ROI do titulo ("NEON_DRIVE", SEM o cursor), conta pixels com canal verde > GLOW_T (faixa do
-# halo tenue). Compara a EXTENSAO do glow do iOS com a do baseline Android; o desvio absoluto tem
-# que ficar <= GLOW_BOUND. Colapsar o blur do text-shadow derruba a contagem -> desvio estoura.
-# (LICAO da fatia anterior: AE-contagem e SAD/MSE sao CEGOS ao glow tenue; a lit-area do halo nao.)
+# Na ROI de um texto, conta pixels com canal verde > GLOW_T. Compara a EXTENSAO do verde do iOS com
+# a do baseline Android; o desvio absoluto tem que ficar <= GLOW_BOUND.
+#   - nowplaying: a ROI cobre o titulo "NEON_DRIVE", que tem text-shadow (Shadow blur 18f, o UNICO
+#     glow=true da UI). Colapsar o blur derruba a lit-area do HALO -> desvio estoura. (LICAO: AE e
+#     SAD/MSE sao CEGOS ao halo tenue; a lit-area nao.)
+#   - library: ATENCAO — a LibraryScreen NAO tem text-shadow (o unico glow=true da UI inteira e o
+#     titulo do NowPlaying). Aqui a ROI cobre o NOME de uma playlist (Txt display=true VT323, SEM
+#     halo), entao este check mede a PRESENCA/EXTENSAO do texto verde (pega o nome sumir/dimmar/
+#     mover) — sensibilidade DISJUNTA do estrutural, mas o vetor de regressao da Library e DESLOCAR
+#     A GRADE (nao colapsar blur, que aqui nao existe).
 #
 # ------------------------------------------------------------------------- CHECK (3) COVER
-# O sample da capa é 96x96 PURO preto/branco -> no CoverProcessor o scale() curto-circuita (sem
-# bilinear) e o dither Floyd–Steinberg nao difunde erro (luminancia 0/1, longe do limiar 0.5) -> o
-# 1-bit sai BIT-IDENTICO no decode dos dois lados (skiko x BitmapFactory), imune ao micro-jitter
-# (medido: ±8/canal -> 0 de 9216 bits mudam). A UNICA variacao possivel é o upscale nearest 96->128
-# no desenho (convencao de amostragem skiko x Canvas Android), 1px nas BORDAS das figuras -> quase
-# tudo absorvido pela vizinhanca ±1px. Logo o AE na ROI da capa é APERTADO. Degradar a capa (trocar
-# o sample / mexer no dither) muda MILHARES de pixels do interior -> estoura o teto.
+# SO no perfil nowplaying. O sample da capa e 96x96 PURO preto/branco -> no CoverProcessor o
+# scale() curto-circuita (sem bilinear) e o dither Floyd–Steinberg nao difunde erro (luminancia
+# 0/1, longe do limiar 0.5) -> o 1-bit sai BIT-IDENTICO no decode dos dois lados (skiko x
+# BitmapFactory), imune ao micro-jitter. Logo o AE na ROI da capa e APERTADO.
 #
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
-# Uso: python3 ab/ab_diff.py <android.png> <ios.png>
-#   exit 0 = PASS (os 3 checks)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
+# Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
+#   perfil ∈ {nowplaying (default), library}.  O check COVER so roda se o perfil define cover.
+#   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
 from functools import reduce
 from PIL import Image, ImageChops, ImageDraw
 
-W, H = 393, 420
-
-# --- check (1) estrutural (coords recalibradas p/ o layout COM a capa; density 1f -> dp==px)
-TOL = 32
-CEILING = 1600          # known-good real (CI 7f0f536) = 1044; ~1.5x de folga (layout com a capa)
-MASKS = [
-    (22, 60, 151, 189),    # CAPA (fidelidade cobrada no check (3) COVER — regiao disjunta)
-    (167, 230, 187, 242),  # CURSOR: só o "_" final do titulo (E de DRIVE termina ~x166)
-    (204, 388, 385, 405),  # medidores L/R (à direita do ":: SPECTRUM")
-    (10, 405, 385, 420),   # barras do Spectrum (sliver clipado no rodape, animado)
-]
-
-# --- check (2) glow
-TITLE_ROI = (6, 205, 166, 252)  # bbox de "NEON_DRIVE" + halo, SEM o cursor (x<167)
-GLOW_T = 18                     # limiar do halo tenue no canal verde
-GLOW_BOUND = 500                # desvio maximo da extensao do glow (iOS vs Android)
-
-# --- check (3) cover
-COVER_ROI = (24, 62, 148, 186)  # interior da capa 128px (dither puro, sem a moldura accent)
-COVER_TOL = 40                  # 2 cores alto contraste; tolerancia por canal
-COVER_CEILING = 50              # APERTADO: known-good real (CI 7f0f536) = 0 (capa BIT-PERFEITA
-                                # iOS x Android); regressao da capa estoura p/ ~15k. Folga minima.
+# ===================================================================== PERFIS
+# Cada perfil define o canvas (w,h), o ESTRUTURAL (tol/ceiling/masks), o GLOW (roi/t/bound) e,
+# opcionalmente, o COVER (roi/tol/ceiling). cover=None => o perfil nao roda o check COVER.
+PROFILES = {
+    # NowPlayingPanel — IDENTICO a fatia anterior (par CI ja verde: AE=1044, glow=171, cover=0).
+    "nowplaying": {
+        "w": 393, "h": 420,
+        "tol": 32,
+        "ceiling": 1600,            # known-good real (CI 7f0f536) = 1044; ~1.5x de folga
+        "masks": [
+            (22, 60, 151, 189),     # CAPA (fidelidade cobrada no check COVER — regiao disjunta)
+            (167, 230, 187, 242),   # CURSOR: só o "_" final do titulo
+            (204, 388, 385, 405),   # medidores L/R
+            (10, 405, 385, 420),    # barras do Spectrum (sliver clipado, animado)
+        ],
+        "title_roi": (6, 205, 166, 252),  # bbox de "NEON_DRIVE" + halo, SEM o cursor (x<167)
+        "glow_t": 18,
+        "glow_bound": 500,
+        "cover": {
+            "roi": (24, 62, 148, 186),    # interior da capa 128px (dither puro, sem a moldura)
+            "tol": 40,
+            "ceiling": 50,                # APERTADO: known-good real = 0 (capa BIT-PERFEITA)
+        },
+    },
+    # LibraryScreen (filtro PLAYLISTS). TETOS = PLACEHOLDERS — a fatia c3 recalibra com os numeros
+    # REAIS do par CI (quando o baseline library-android.png existir). As ROIs/masks abaixo sao
+    # estimadas do layout (Column spacedBy 10 @ density 1f; SearchRow 44 / FilterRow 32 / grade /
+    # mini-player 44); c3 confirma contra os pixels reais.
+    "library": {
+        "w": 393, "h": 600,
+        "tol": 32,
+        "ceiling": 3000,            # PLACEHOLDER (c3 calibra) — tela cheia 393x600 > nowplaying
+        "masks": [
+            (58, 20, 92, 46),       # CURSOR do SearchRow (bbox aprox. do cursor no inicio do campo)
+            # Sem mascara de overscroll: 4 itens (tile NOVA + 3 playlists) em 2 colunas = 2 linhas,
+            # cabem sem rolagem -> sem glow de overscroll. c3 adiciona se aparecer no par real.
+        ],
+        "title_roi": (205, 226, 379, 252),  # PLACEHOLDER: nome da 1a playlist ("RETRO", col1 linha0)
+        "glow_t": 18,
+        "glow_bound": 600,          # PLACEHOLDER (c3 calibra)
+        "cover": None,              # Library NAO tem a capa 1-bit -> sem check COVER
+    },
+}
 
 
 def _chanmax(diff):
@@ -84,76 +111,90 @@ def _neigh_ae(a, b, tol):
     return sum(both.get_flattened_data()) // 255
 
 
-def _apply_masks(im):
+def _apply_masks(im, masks):
     im = im.copy()
     d = ImageDraw.Draw(im)
-    for m in MASKS:
+    for m in masks:
         d.rectangle(m, fill=(0, 0, 0))
     return im
 
 
-def structural_ae(a, b):
-    return _neigh_ae(_apply_masks(a), _apply_masks(b), TOL)
+def structural_ae(a, b, p):
+    return _neigh_ae(_apply_masks(a, p["masks"]), _apply_masks(b, p["masks"]), p["tol"])
 
 
-def cover_ae(a, b):
-    return _neigh_ae(a.crop(COVER_ROI), b.crop(COVER_ROI), COVER_TOL)
+def cover_ae(a, b, p):
+    roi = p["cover"]["roi"]
+    return _neigh_ae(a.crop(roi), b.crop(roi), p["cover"]["tol"])
 
 
-def glow_extent(im):
-    """Area iluminada do halo (green > GLOW_T) na ROI do titulo."""
-    g = im.split()[1].crop(TITLE_ROI)
-    return sum(1 for v in g.get_flattened_data() if v > GLOW_T)
+def glow_extent(im, p):
+    """Area iluminada (green > glow_t) na ROI do texto."""
+    g = im.split()[1].crop(p["title_roi"])
+    t = p["glow_t"]
+    return sum(1 for v in g.get_flattened_data() if v > t)
 
 
-def _load(path, who):
+def _load(path, who, p):
     try:
         im = Image.open(path).convert("RGB")
     except Exception as e:
         print(f"::error::A/B FAIL — nao abri o PNG {who} '{path}': {e}")
         sys.exit(1)
-    if im.size != (W, H):
-        print(f"::error::A/B FAIL — {who} tem {im.size}, esperado {(W, H)} "
+    want = (p["w"], p["h"])
+    if im.size != want:
+        print(f"::error::A/B FAIL — {who} tem {im.size}, esperado {want} "
               f"(iOS ImageComposeScene e Android ComposeView tem que casar tamanho/densidade).")
         sys.exit(1)
     return im
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("uso: python3 ab/ab_diff.py <android.png> <ios.png>")
+    if len(sys.argv) not in (3, 4):
+        print("uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]")
         sys.exit(2)
-    android = _load(sys.argv[1], "Android (baseline)")
-    ios = _load(sys.argv[2], "iOS (render offscreen)")
+    name = (sys.argv[3] if len(sys.argv) == 4 else "nowplaying").lower()
+    p = PROFILES.get(name)
+    if p is None:
+        print(f"::error::perfil desconhecido '{name}'. Use um de: {', '.join(PROFILES)}")
+        sys.exit(2)
 
-    ae = structural_ae(android, ios)
-    glow_dev = abs(glow_extent(ios) - glow_extent(android))
-    cov = cover_ae(android, ios)
+    android = _load(sys.argv[1], "Android (baseline)", p)
+    ios = _load(sys.argv[2], "iOS (render offscreen)", p)
 
-    ok_struct = ae <= CEILING
-    ok_glow = glow_dev <= GLOW_BOUND
-    ok_cover = cov <= COVER_CEILING
-    print(f"A/B check (1) ESTRUTURAL: AE={ae}  TETO={CEILING}  TOL={TOL}/canal  vizinhanca=±1px "
-          f"-> {'PASS' if ok_struct else 'FAIL'}")
-    print(f"      mascaras: capa={MASKS[0]} cursor={MASKS[1]} L/R={MASKS[2]} spectrum={MASKS[3]}")
-    print(f"A/B check (2) GLOW: desvio_lit-area(green>{GLOW_T}, ROI={TITLE_ROI})={glow_dev}  "
-          f"BOUND={GLOW_BOUND}  -> {'PASS' if ok_glow else 'FAIL'}")
-    print(f"A/B check (3) COVER: AE(ROI={COVER_ROI}, TOL={COVER_TOL}/canal, viz=±1px)={cov}  "
-          f"TETO={COVER_CEILING}  -> {'PASS' if ok_cover else 'FAIL'}")
+    print(f"A/B perfil: {name} ({p['w']}x{p['h']})")
+
+    ae = structural_ae(android, ios, p)
+    glow_dev = abs(glow_extent(ios, p) - glow_extent(android, p))
+    ok_struct = ae <= p["ceiling"]
+    ok_glow = glow_dev <= p["glow_bound"]
+    print(f"A/B check (1) ESTRUTURAL: AE={ae}  TETO={p['ceiling']}  TOL={p['tol']}/canal  "
+          f"vizinhanca=±1px -> {'PASS' if ok_struct else 'FAIL'}")
+    print(f"      mascaras: {p['masks']}")
+    print(f"A/B check (2) GLOW: desvio_lit-area(green>{p['glow_t']}, ROI={p['title_roi']})={glow_dev}  "
+          f"BOUND={p['glow_bound']}  -> {'PASS' if ok_glow else 'FAIL'}")
+
+    ok_cover = True
+    cov = None
+    if p["cover"] is not None:
+        cov = cover_ae(android, ios, p)
+        ok_cover = cov <= p["cover"]["ceiling"]
+        print(f"A/B check (3) COVER: AE(ROI={p['cover']['roi']}, TOL={p['cover']['tol']}/canal, "
+              f"viz=±1px)={cov}  TETO={p['cover']['ceiling']}  -> {'PASS' if ok_cover else 'FAIL'}")
 
     if ok_struct and ok_glow and ok_cover:
-        print("A/B PASS — layout fiel, glow do text-shadow preservado E capa 1-bit fiel (iOS x Android).")
+        print(f"A/B PASS ({name}) — layout fiel e texto/glow preservado"
+              + (" E capa 1-bit fiel" if p["cover"] is not None else "") + " (iOS x Android).")
         sys.exit(0)
     if not ok_struct:
-        print(f"::error::A/B FAIL (estrutural) — {ae} > {CEILING} pixels divergentes fora da "
-              f"capa/faixa dinamica. Layout/posicao quebrou.")
+        print(f"::error::A/B FAIL ({name}, estrutural) — {ae} > {p['ceiling']} pixels divergentes "
+              f"fora das mascaras. Layout/posicao quebrou.")
     if not ok_glow:
-        print(f"::error::A/B FAIL (glow) — extensao do halo do titulo desviou {glow_dev} > "
-              f"{GLOW_BOUND} do baseline. Provavel regressao do text-shadow (blur). "
-              f"Baixe o artifact ab-nowplaying e compare o halo de NEON_DRIVE.")
+        print(f"::error::A/B FAIL ({name}, glow) — extensao do verde na ROI desviou {glow_dev} > "
+              f"{p['glow_bound']} do baseline. Baixe o artifact e compare.")
     if not ok_cover:
-        print(f"::error::A/B FAIL (cover) — AE da capa {cov} > {COVER_CEILING} na ROI {COVER_ROI}. "
-              f"A capa dithered divergiu (sample/decode/dither mudou). Baixe o artifact ab-nowplaying.")
+        print(f"::error::A/B FAIL ({name}, cover) — AE da capa {cov} > {p['cover']['ceiling']} na "
+              f"ROI {p['cover']['roi']}. A capa dithered divergiu (sample/decode/dither mudou).")
     sys.exit(1)
 
 

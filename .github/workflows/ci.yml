@@ -110,7 +110,7 @@ jobs:
           # em NSTemporaryDirectory (dentro do container do simulador, mas no filesystem do host)
           # e IMPRIME o path absoluto resolvido — robusto, sem depender de env no container.
           ./gradlew :shared:iosSimulatorArm64Test :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon -i 2>&1 | tee ab/ios-test.log
-          # Parse do stdout: "A/B offscreen: PNG <n> B, escrito=<bool> em <path>"
+          # Parse do stdout: "A/B offscreen: PNG <n> B, escrito=<bool> em <path>" (NowPlaying)
           PNG=$(grep -oE 'em (/[^ ]+nowplaying-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
           echo "PNG iOS resolvido: '$PNG'"
           if [ -n "$PNG" ] && [ -f "$PNG" ]; then
@@ -118,6 +118,15 @@ jobs:
             echo "Render A/B iOS copiado p/ ab/nowplaying-ios.png ($(stat -f%z ab/nowplaying-ios.png) bytes)"
           else
             echo "::warning::PNG iOS do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 2o PNG: "A/B library: PNG <n> B, escrito=<bool> em <path>" (LibraryScreen)
+          PNG_LIB=$(grep -oE 'em (/[^ ]+library-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (library) resolvido: '$PNG_LIB'"
+          if [ -n "$PNG_LIB" ] && [ -f "$PNG_LIB" ]; then
+            cp "$PNG_LIB" ab/library-ios.png
+            echo "Render A/B iOS (library) copiado p/ ab/library-ios.png ($(stat -f%z ab/library-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (library) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
           fi
 
       # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
@@ -132,7 +141,19 @@ jobs:
           set -eo pipefail
           python3 -m venv /tmp/abvenv
           /tmp/abvenv/bin/python -m pip install --quiet Pillow
+          # Par NowPlaying (3 checks) — GATE DURO, inalterado.
           /tmp/abvenv/bin/python ab/ab_diff.py ab/nowplaying-android.png ab/nowplaying-ios.png
+          # Par Library (perfil 'library': estrutural + glow, SEM cover) — GATE DURO assim que o
+          # baseline existir. O baseline (ab/library-android.png) e um commit DELIBERADO coordenado
+          # pelo Bigorna (captura por adb na AbLibraryBaselineActivity). ENQUANTO nao existir, o
+          # diff e PULADO com ::warning:: (nao derruba o job: evita empilhar vermelho na janela
+          # entre o codigo c2 e a captura do baseline). Quando o PNG entrar no repo, vira gate duro
+          # automaticamente (exit!=0 derruba o job). A calibragem dos tetos placeholder = fatia c3.
+          if [ -f ab/library-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/library-android.png ab/library-ios.png library
+          else
+            echo "::warning::baseline ab/library-android.png ausente (captura coordenada pelo Bigorna) — diff da Library PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
 
       # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
       # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
@@ -146,6 +167,8 @@ jobs:
           path: |
             ab/nowplaying-ios.png
             ab/nowplaying-android.png
+            ab/library-ios.png
+            ab/library-android.png
             ab/ios-test.log
           if-no-files-found: warn
 
