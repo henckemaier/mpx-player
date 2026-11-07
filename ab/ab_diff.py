@@ -159,25 +159,28 @@ PROFILES = {
     # MpxShell com conteudo DUMMY ("CONTENT"): gateia o CHROME de navegacao (barra MpxNav horizontal
     # + cabecalho MpxHeader), 4o par A/B (P7 fatia nav). Canvas PEQUENO (393x200): cabecalho (~31px)
     # + barra (44dp) + placeholder (80dp) + espacamentos/padding. A barra tem POUCO texto (so os
-    # labels VT323 display das abas, que batem como os headers de secao dos outros perfis) -> SEM
-    # mascara a principio (masks=[]); se sobrar AA de texto do header/labels, a c3 ajusta.
+    # labels VT323 display das abas, que batem como os headers de secao dos outros perfis).
     #
     # Checks: ESTRUTURAL (presenca/posicao da moldura da barra, dividers entre abas, accent-fill da
     # aba PLAY selecionada, texto apagado das abas QUEUE/EQ desabilitadas, moldura do cabecalho) +
     # GLOW (a barra NAO tem glow=true -> a ROI mede a PRESENCA/EXTENSAO do verde display das abas,
     # como no perfil library; NAO ha halo a colapsar). SEM cover.
     #
-    # TETOS PLACEHOLDER (folgados): o baseline Android ainda nao existe no commit c2 (captura
-    # DELIBERADA em commit separado). A c3 calibra ceiling/glow_bound/title_roi/masks com os pixels
-    # REAIS do par CI (clean * ~1.5) + prova de regressao. NAO inflar p/ encobrir layout.
+    # CALIBRADO (fatia c3) com os numeros REAIS do par CI (run 42410882821, 9490b2c): o par e LIMPINHO
+    # — chrome = fills solidos + labels VT323 display que batem item-a-item; SEM o problema de texto-
+    # denso do Settings -> ZERO mascara necessaria (masks=[]). ESTRUTURAL AE_LIMPO=196 -> ceiling
+    # 196*~1.53=300; GLOW dev=124 -> bound 124*~1.53=190 (mesma convencao modesta da Library, 810->
+    # 1250). A PROVA DE REGRESSAO (branch -TEMP: +12dp no padding do shell -> a barra+5 labels movem ->
+    # estrutural na casa dos milhares, estoura 300 com conforto) garante que os tetos nao sao frouxos.
+    # NUNCA inflar p/ encobrir layout.
     "nav": {
         "w": 393, "h": 200,
         "tol": 32,
-        "ceiling": 6000,            # PLACEHOLDER folgado (chrome-only num canvas pequeno) — c3 calibra
-        "masks": [],                # sem mascara a principio (so labels display, que batem) — c3 ajusta
+        "ceiling": 300,             # known-good LIMPO = 196 (chrome-only, sem mascara); ~1.53x de folga
+        "masks": [],                # par limpo: labels display batem -> nenhuma mascara necessaria
         "title_roi": (10, 55, 383, 95),  # banda dos labels da barra MpxNav (presenca do verde display)
         "glow_t": 18,
-        "glow_bound": 3000,         # PLACEHOLDER folgado (extensao do verde da barra) — c3 calibra
+        "glow_bound": 190,          # known-good dev=124 (presenca das labels); ~1.53x de folga
         "cover": None,              # chrome de nav nao tem capa 1-bit -> sem check COVER
     },
 }
