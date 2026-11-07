@@ -47,7 +47,7 @@ import com.mpx.player.ui.AndroidLibraryViewModel
 import com.mpx.player.ui.EqViewModel
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.PlayerViewModel
-import com.mpx.player.ui.SettingsViewModel
+import com.mpx.player.ui.AndroidSettingsViewModel
 import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.MpxHeader
 import com.mpx.player.ui.components.MpxNav
@@ -64,7 +64,7 @@ import com.mpx.player.ui.screens.EqScreen
 import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen
-import com.mpx.player.ui.screens.SettingsScreen
+import com.mpx.player.ui.screens.AndroidSettingsScreen
 import com.mpx.player.ui.theme.LocalLandscape
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
@@ -260,9 +260,9 @@ private fun MainContent(
             )
         }
         Tab.CFG -> {
-            val vm = mpxViewModel { SettingsViewModel(it) }
+            val vm = mpxViewModel { AndroidSettingsViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            SettingsScreen(ui, vm, onReboot)
+            AndroidSettingsScreen(ui, vm, onReboot)
         }
     }
 }

@@ -17,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -27,8 +26,9 @@ import com.mpx.player.ui.theme.Mpx
 
 // Blocos CRT que ficam no :app (dependem de Android/BuildConfig ou são navegação específica do
 // app). Os primitivos portáveis (Txt, frame, tap, glow, InvertedBar, SegmentBar, MpxButton,
-// IconButton, TextButton, blinkingCursor, scanlines, formatTime) foram para :shared/commonMain
-// (CrtKit.kt), no MESMO pacote `com.mpx.player.ui.components` — por isso são usados aqui sem import.
+// IconButton, TextButton, blinkingCursor, scanlines, formatTime, DashedDivider, ToggleRow) foram
+// para :shared/commonMain (CrtKit.kt), no MESMO pacote `com.mpx.player.ui.components` — por isso são
+// usados aqui sem import.
 
 // ---------------------------------------------------------------- blocos
 
@@ -104,23 +104,4 @@ fun Panel(
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(modifier.border(1.dp, border).padding(padding), content = content)
-}
-
-/** Linha "[X] NOME ........ VALOR" usada em EQ e CFG. */
-@Composable
-fun ToggleRow(name: String, checked: Boolean, value: String, onClick: () -> Unit, minHeight: Dp = 44.dp) {
-    val c = Mpx.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(minHeight)
-            .tap(Role.Checkbox, onClick)
-            .padding(horizontal = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Txt("[${if (checked) "X" else " "}] $name", size = 12.sp)
-        Txt(value, size = 12.sp, color = c.dim)
-    }
-    DashedDivider()
 }

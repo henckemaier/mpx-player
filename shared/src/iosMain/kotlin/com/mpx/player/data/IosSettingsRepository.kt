@@ -1,94 +1,46 @@
 package com.mpx.player.data
 
 import com.mpx.player.model.EqSettings
+import com.mpx.player.model.UserSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
+import kotlinx.coroutines.flow.map
 import platform.Foundation.NSUserDefaults
 
 /**
- * Settings no iOS: persiste o [EqSettings] e a árvore de letras (`lrcTreeUri`) em
- * `NSUserDefaults`, atrás do contrato comum [SettingsRepository] — espelho do
- * `AndroidSettingsRepository` (DataStore). Só a fatia comum (eq + lrcTreeUri + updateEq);
- * o resto do `UserSettings` é Android-only e não entra aqui.
+ * Settings no iOS: persiste o [UserSettings] inteiro como UM objeto JSON em `NSUserDefaults`
+ * (chave [KEY_SETTINGS]), atrás do contrato comum [SettingsRepository] — espelho do
+ * `AndroidSettingsRepository` (DataStore). Fonte única de verdade: `_settings`; `eq`/`lrcTreeUri`
+ * derivam dela. A (de)serialização é a função pura [UserSettingsJson] (commonMain, testável).
  *
- * O EqSettings é serializado em JSON (via [EqSettingsJson], função pura testável). O
- * `lrcTreeUri` existe só por paridade de contrato: no iOS não há SAF para configurá-lo,
- * então fica no que estiver salvo (normalmente `null`) — a leitura local de letras é
- * Android-only (ver `IosLyricsRepository`).
+ * O `lrcTreeUri` existe só por paridade de contrato: no iOS não há SAF para configurá-lo, então
+ * fica no que estiver salvo (normalmente `null`) — a leitura local de letras é Android-only
+ * (ver `IosLyricsRepository`).
  */
 class IosSettingsRepository : SettingsRepository {
 
     private val defaults = NSUserDefaults.standardUserDefaults
 
-    private val _eq = MutableStateFlow(loadEq())
-    override val eq: Flow<EqSettings> = _eq.asStateFlow()
+    private val _settings = MutableStateFlow(load())
+    override val settings: Flow<UserSettings> = _settings.asStateFlow()
+    override val eq: Flow<EqSettings> = _settings.map { it.eq }
+    override val lrcTreeUri: Flow<String?> = _settings.map { it.lrcTreeUri }
 
-    private val _lrcTreeUri = MutableStateFlow(defaults.stringForKey(KEY_LRC))
-    override val lrcTreeUri: Flow<String?> = _lrcTreeUri.asStateFlow()
+    override suspend fun update(transform: (UserSettings) -> UserSettings) {
+        val next = transform(_settings.value)
+        _settings.value = next
+        defaults.setObject(UserSettingsJson.toJson(next), KEY_SETTINGS)
+    }
 
     override suspend fun updateEq(transform: (EqSettings) -> EqSettings) {
-        val next = transform(_eq.value)
-        _eq.value = next
-        defaults.setObject(EqSettingsJson.toJson(next), KEY_EQ)
+        update { it.copy(eq = transform(it.eq)) }
     }
 
-    private fun loadEq(): EqSettings =
-        EqSettingsJson.fromJson(defaults.stringForKey(KEY_EQ).orEmpty())
+    private fun load(): UserSettings =
+        UserSettingsJson.fromJson(defaults.stringForKey(KEY_SETTINGS).orEmpty())
 
     companion object {
-        const val KEY_EQ = "mpx_eq_settings"
-        const val KEY_LRC = "mpx_lrc_tree"
-    }
-}
-
-/**
- * (De)serialização PURA de [EqSettings] em JSON (kotlinx.serialization, estilo manual
- * igual ao [PlaylistLogic] — sem `@Serializable`/plugin, zero impacto no `:app`).
- * Resiliente: entrada vazia/corrompida → `EqSettings()` padrão; `levels`/`custom` só são
- * aceitos com 10 níveis (senão caem no default).
- */
-internal object EqSettingsJson {
-
-    fun toJson(eq: EqSettings): String = buildJsonObject {
-        put("enabled", eq.enabled)
-        put("preset", eq.preset)
-        putJsonArray("levels") { eq.levels.forEach { add(it) } }
-        putJsonArray("custom") { eq.custom.forEach { add(it) } }
-        put("preamp", eq.preamp)
-        put("bassBoost", eq.bassBoost)
-        put("surround", eq.surround)
-        put("loudness", eq.loudness)
-    }.toString()
-
-    fun fromJson(text: String): EqSettings {
-        if (text.isBlank()) return EqSettings()
-        val o = runCatching { Json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return EqSettings()
-        val d = EqSettings()
-        fun levels(name: String, def: List<Int>): List<Int> =
-            (o[name] as? JsonArray)
-                ?.mapNotNull { (it as? JsonPrimitive)?.intOrNull }
-                ?.takeIf { it.size == 10 } ?: def
-        return EqSettings(
-            enabled = (o["enabled"] as? JsonPrimitive)?.booleanOrNull ?: d.enabled,
-            preset = (o["preset"] as? JsonPrimitive)?.contentOrNull ?: d.preset,
-            levels = levels("levels", d.levels),
-            custom = levels("custom", d.custom),
-            preamp = (o["preamp"] as? JsonPrimitive)?.intOrNull ?: d.preamp,
-            bassBoost = (o["bassBoost"] as? JsonPrimitive)?.booleanOrNull ?: d.bassBoost,
-            surround = (o["surround"] as? JsonPrimitive)?.booleanOrNull ?: d.surround,
-            loudness = (o["loudness"] as? JsonPrimitive)?.booleanOrNull ?: d.loudness,
-        )
+        const val KEY_SETTINGS = "mpx_user_settings"
     }
 }

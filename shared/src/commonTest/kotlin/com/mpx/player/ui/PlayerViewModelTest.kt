@@ -10,6 +10,7 @@ import com.mpx.player.model.EqSettings
 import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
 import com.mpx.player.model.Track
+import com.mpx.player.model.UserSettings
 import com.mpx.player.shared.playback.AudioPlayer
 import com.mpx.player.shared.playback.PlaybackItem
 import com.mpx.player.shared.playback.PlaybackState
@@ -189,8 +190,10 @@ private class FakeLibrary(initial: LibraryState) : LibraryRepository {
 }
 
 private class FakeSettings : SettingsRepository {
+    override val settings: Flow<UserSettings> = MutableStateFlow(UserSettings())
     override val eq: Flow<EqSettings> = MutableStateFlow(EqSettings())
     override val lrcTreeUri: Flow<String?> = MutableStateFlow<String?>(null)
+    override suspend fun update(transform: (UserSettings) -> UserSettings) {}
     override suspend fun updateEq(transform: (EqSettings) -> EqSettings) {}
 }
 

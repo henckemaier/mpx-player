@@ -43,7 +43,7 @@ class AndroidSettingsRepository(private val context: Context) : SettingsReposito
         val loud = booleanPreferencesKey("fx_loud")
     }
 
-    val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
+    override val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
 
     /** Parte comum do contrato [SettingsRepository] usada pelos ViewModels migrados. */
     override val eq: Flow<EqSettings> = settings.map { it.eq }
@@ -100,6 +100,40 @@ class AndroidSettingsRepository(private val context: Context) : SettingsReposito
     suspend fun setLrcTree(v: String?) = context.dataStore.edit { if (v == null) it.remove(K.lrcTree) else it[K.lrcTree] = v }
     suspend fun setLastScan(v: Long) = context.dataStore.edit { it[K.lastScan] = v }
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
+
+    /**
+     * Transformação atômica sobre o [UserSettings] inteiro (parte comum do contrato, usada pelo
+     * `SettingsViewModel` migrado). Lê o estado atual, aplica o `transform` e reescreve TODOS os
+     * campos numa única edição do DataStore (inclusive o bloco `eq`).
+     */
+    override suspend fun update(transform: (UserSettings) -> UserSettings) {
+        context.dataStore.edit { p ->
+            val n = transform(p.toSettings())
+            val cc = n.customColor
+            val lrc = n.lrcTreeUri
+            p[K.theme] = n.theme
+            if (cc != null) p[K.customColor] = cc else p.remove(K.customColor)
+            p[K.oled] = n.oled
+            p[K.font] = n.font
+            p[K.cover] = n.cover
+            p[K.scanlines] = n.scanlines
+            p[K.glow] = n.glow
+            p[K.cursor] = n.cursor
+            p[K.mono] = n.monoCovers
+            p[K.crossfade] = n.crossfade
+            if (lrc == null) p.remove(K.lrcTree) else p[K.lrcTree] = lrc
+            p[K.lastScan] = n.lastScan
+            p[K.playlists] = n.playlistsImported
+            p[K.eqOn] = n.eq.enabled
+            p[K.eqPreset] = n.eq.preset
+            p[K.eqLevels] = n.eq.levels.encode()
+            p[K.eqCustom] = n.eq.custom.encode()
+            p[K.preamp] = n.eq.preamp
+            p[K.bass] = n.eq.bassBoost
+            p[K.surround] = n.eq.surround
+            p[K.loud] = n.eq.loudness
+        }
+    }
 
     override suspend fun updateEq(transform: (EqSettings) -> EqSettings) {
         context.dataStore.edit { p ->

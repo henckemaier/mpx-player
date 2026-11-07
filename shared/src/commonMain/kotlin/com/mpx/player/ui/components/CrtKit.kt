@@ -46,9 +46,10 @@ import com.mpx.player.ui.theme.Mpx
 import kotlinx.coroutines.delay
 
 // Primitivos CRT portáveis (commonMain) consumidos pelas telas e pelo NowPlayingPanel do porte
-// iOS. Os blocos que dependem de Android (MpxHeader/BuildConfig, Tab/nav, Panel, ToggleRow)
-// ficam no Crt.kt do :app, no MESMO pacote — Kotlin resolve entre módulos. DashedDivider migrou
-// p/ cá na fatia LIBRARY (puro; usado pela LibraryScreen comum e pela ToggleRow do :app).
+// iOS. Os blocos que dependem de Android (MpxHeader/BuildConfig, Tab/nav, Panel) ficam no Crt.kt
+// do :app, no MESMO pacote — Kotlin resolve entre módulos. DashedDivider migrou p/ cá na fatia
+// LIBRARY; ToggleRow migrou na fatia SETTINGS (puro; usado por EqScreen (:app) e SettingsScreen
+// comum).
 
 // ---------------------------------------------------------------- texto
 
@@ -278,4 +279,26 @@ fun DashedDivider() {
             x += dash * 2
         }
     }
+}
+
+/**
+ * Linha "[X] NOME ........ VALOR" usada em EQ e CFG. Puro — migrou do Crt.kt (:app) na fatia
+ * SETTINGS (a SettingsScreen comum precisa dela no commonMain; EqScreen (:app) resolve pelo FQN).
+ */
+@Composable
+fun ToggleRow(name: String, checked: Boolean, value: String, onClick: () -> Unit, minHeight: Dp = 44.dp) {
+    val c = Mpx.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(minHeight)
+            .tap(Role.Checkbox, onClick)
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Txt("[${if (checked) "X" else " "}] $name", size = 12.sp)
+        Txt(value, size = 12.sp, color = c.dim)
+    }
+    DashedDivider()
 }
