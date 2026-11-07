@@ -5,7 +5,7 @@
 # ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
 # espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# CINCO PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
+# SEIS PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
 #   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
 #   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
@@ -21,7 +21,12 @@
 #   eq         (393x720) — EqScreen (EQUALIZER, retrato: Preset/BandInfo/Bands 10x13/Preamp/Effects/
 #                          Buttons). Dominada por FILLS de segmento (como o nav) + rotulos pequenos.
 #                          Checks: ESTRUTURAL + GLOW (presença dos fills verdes das bandas, SEM halo).
-#                          SEM cover. Tetos PLACEHOLDER (calibrados no c3; masks decididas MEDINDO).
+#                          SEM cover. Calibrado na fatia c3 (AE limpo=1728, sem mascara).
+#   queue      (393x720) — QueueScreen (fila, retrato: Header c/ disc-cover + InvertedBar + colunas +
+#                          LazyColumn de 6 rows [row tocando = bg accent] + Totais + Botoes). Mistura
+#                          GeneratedCover (disc) + fills da row-highlight + VARIAS rows de titulo
+#                          (texto pequeno empilhado). Checks: ESTRUTURAL + GLOW (presenca). SEM cover
+#                          1-bit. Tetos PLACEHOLDER (calibrados no c3; masks so-titulo SE dominar).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -54,7 +59,7 @@
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
 # Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
-#   perfil ∈ {nowplaying (default), library, settings, nav, eq}.  O check COVER so roda se o perfil define cover.
+#   perfil ∈ {nowplaying (default), library, settings, nav, eq, queue}.  O check COVER so roda se o perfil define cover.
 #   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
@@ -217,6 +222,32 @@ PROFILES = {
         "glow_t": 18,
         "glow_bound": 150,          # PISO absoluto (known-good dev=2); banda sumir/mover desvia milhares -> pega com folga
         "cover": None,              # EQ nao tem a capa 1-bit -> sem check COVER
+    },
+    # QueueScreen (fila, retrato). 6o par A/B (P7 fatia queue). Canvas ALTO (393x720): QueueHeader
+    # (GeneratedCover disc 92dp + album display 26sp + meta + playlist) + InvertedBar("> DIR /QUEUE",
+    # glow=false) + ColumnHeaders(NR/FILENAME/TIME) + QueueList (LazyColumn de 6 rows: NR + marca
+    # ▶/✓ + titulo.uppercase + TIME; a row TOCANDO [index=1] com bg accent) + Totais + Botoes.
+    #
+    # COVER: fixture sem art + cover=0 -> GeneratedCover(disc) SINCRONO/deterministico (sem a capa
+    # 1-bit do NowPlaying) -> SEM check COVER. index=1 (<=2) -> sem animateScrollToItem (lista do topo).
+    #
+    # Mistura FILLS (disc-cover, row-highlight accent da row tocando, molduras) + VARIAS rows de TITULO
+    # (texto pequeno 12sp empilhado = mais texto que EQ/nav). O check GLOW mede PRESENCA do verde do
+    # album display 26sp do header (display=true, grande; chrome fiel).
+    #
+    # TETOS PLACEHOLDER (FOLGADOS): a c3 MEDE o clean AE real do par CI e calibra ceiling=clean*~1.5 +
+    # glow_bound. masks=[] a principio: SE o AE empilhar por AA das rows de titulo, a c3 poe mascara
+    # CIRURGICA so na COLUNA DE TITULOS (disjunta dos fills/cover/row-highlight/NR/TIME), teto no CLEAN
+    # NUNCA inflado. Placeholder folgado p/ a run do baseline nao dar vermelho espurio.
+    "queue": {
+        "w": 393, "h": 720,
+        "tol": 32,
+        "ceiling": 20000,           # PLACEHOLDER folgado (canvas alto, cover+fills+rows de texto) — c3 calibra
+        "masks": [],                # decidir MEDINDO (rows de titulo empilhadas; se dominar AA, c3 mascara so-titulo)
+        "title_roi": (120, 16, 383, 52),  # album display 26sp do header (presenca do verde display) — c3 refina
+        "glow_t": 18,
+        "glow_bound": 20000,        # PLACEHOLDER folgado — c3 calibra
+        "cover": None,              # QUEUE usa GeneratedCover (disc), nao a capa 1-bit -> sem check COVER
     },
 }
 

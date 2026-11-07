@@ -155,6 +155,15 @@ jobs:
           else
             echo "::warning::PNG iOS (eq) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
           fi
+          # Parse do 6o PNG: "A/B queue: PNG <n> B, escrito=<bool> em <path>" (QueueScreen)
+          PNG_QUEUE=$(grep -oE 'em (/[^ ]+queue-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (queue) resolvido: '$PNG_QUEUE'"
+          if [ -n "$PNG_QUEUE" ] && [ -f "$PNG_QUEUE" ]; then
+            cp "$PNG_QUEUE" ab/queue-ios.png
+            echo "Render A/B iOS (queue) copiado p/ ab/queue-ios.png ($(stat -f%z ab/queue-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (queue) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
 
       # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
       # Android commitado (ab/nowplaying-android.png), com MASCARA na faixa dinamica
@@ -211,6 +220,16 @@ jobs:
           else
             echo "::warning::baseline ab/eq-android.png ausente (captura coordenada pelo Bigorna) — diff do Eq PULADO nesta run. Vira gate duro quando o baseline for commitado."
           fi
+          # Par Queue (perfil 'queue': estrutural + glow, SEM cover) — GATE DURO assim que o baseline
+          # existir. MESMA cadencia dos outros: o baseline (ab/queue-android.png) e um commit DELIBERADO
+          # coordenado pelo Bigorna (captura por adb na AbQueueBaselineActivity). ENQUANTO nao existir,
+          # o diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG entrar no repo, vira gate
+          # duro. Tetos placeholder do perfil 'queue' = calibrados no c3 (masks so-titulo se preciso).
+          if [ -f ab/queue-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/queue-android.png ab/queue-ios.png queue
+          else
+            echo "::warning::baseline ab/queue-android.png ausente (captura coordenada pelo Bigorna) — diff do Queue PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
 
       # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
       # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
@@ -232,6 +251,8 @@ jobs:
             ab/nav-android.png
             ab/eq-ios.png
             ab/eq-android.png
+            ab/queue-ios.png
+            ab/queue-android.png
             ab/ios-test.log
           if-no-files-found: warn
 
