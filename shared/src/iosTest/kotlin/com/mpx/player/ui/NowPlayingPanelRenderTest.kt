@@ -17,9 +17,10 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import org.jetbrains.skia.EncodedImageFormat
-import platform.Foundation.NSData
 import platform.Foundation.NSTemporaryDirectory
-import platform.Foundation.writeToFile
+import platform.posix.fclose
+import platform.posix.fopen
+import platform.posix.fwrite
 import platform.posix.getenv
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,9 +83,14 @@ class NowPlayingPanelRenderTest {
     @OptIn(ExperimentalForeignApi::class)
     private fun writePng(path: String, bytes: ByteArray): Boolean {
         if (bytes.isEmpty()) return false
-        return bytes.usePinned { pinned ->
-            val data = NSData.create(bytes = pinned.addressOf(0), length = bytes.size.convert())
-            data.writeToFile(path, atomically = true)
+        val file = fopen(path, "wb") ?: return false
+        return try {
+            val written = bytes.usePinned { pinned ->
+                fwrite(pinned.addressOf(0), 1.convert(), bytes.size.convert(), file)
+            }
+            written.toULong() == bytes.size.toULong()
+        } finally {
+            fclose(file)
         }
     }
 }
