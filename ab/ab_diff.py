@@ -235,19 +235,25 @@ PROFILES = {
     # (texto pequeno 12sp empilhado = mais texto que EQ/nav). O check GLOW mede PRESENCA do verde do
     # album display 26sp do header (display=true, grande; chrome fiel).
     #
-    # TETOS PLACEHOLDER (FOLGADOS): a c3 MEDE o clean AE real do par CI e calibra ceiling=clean*~1.5 +
-    # glow_bound. masks=[] a principio: SE o AE empilhar por AA das rows de titulo, a c3 poe mascara
-    # CIRURGICA so na COLUNA DE TITULOS (disjunta dos fills/cover/row-highlight/NR/TIME), teto no CLEAN
-    # NUNCA inflado. Placeholder folgado p/ a run do baseline nao dar vermelho espurio.
+    # CALIBRADO (fatia c3) com os numeros REAIS do par CI (run 42422060024, 29a0e08): ESTRUTURAL
+    # AE_CLEAN=2721, GLOW dev=33. O glow=33 prova que o album display 26sp do header + o chrome batem;
+    # o 2721 em 393x720 (~1.0%) e o PISO de AA do texto PEQUENO EMPILHADO (6 titulos 12sp + NR/TIME +
+    # col headers + totais) somado ao disc GeneratedCover. Da FAMILIA EQ(1728)/Library(810) — pisos
+    # aceitos SEM mascara, NAO o texto-denso/stem-darkening do Settings (11052, que exigiu R-A).
+    # Decisao (Maestro/Bigorna): NAO mascarar — nada a esconder; mascarar a coluna de titulos seria
+    # fiddly sem ganho (o gate ja morde). ESTRUTURAL ceiling = 2721*~1.5 = 4100. GLOW bound = 150
+    # (PISO, mesma folga de Library dev=39->150 e EQ dev=2->150; known-good=33; album title sumir/mover
+    # desvia centenas+ -> 150 pega e nao flaka). A PROVA DE REGRESSAO (branch -TEMP: +12dp no padding ->
+    # estrutural nas DEZENAS DE MILHARES) garante que os tetos nao sao frouxos. NUNCA inflar.
     "queue": {
         "w": 393, "h": 720,
         "tol": 32,
-        "ceiling": 20000,           # PLACEHOLDER folgado (canvas alto, cover+fills+rows de texto) — c3 calibra
-        "masks": [],                # decidir MEDINDO (rows de titulo empilhadas; se dominar AA, c3 mascara so-titulo)
-        "title_roi": (120, 16, 383, 52),  # album display 26sp do header (presenca do verde display) — c3 refina
+        "ceiling": 4100,            # known-good CLEAN = 2721 (piso de AA de texto empilhado + disc); ~1.5x
+        "masks": [],                # par limpo (glow dev=33, display/chrome fieis); piso de AA aceito SEM mascara (como EQ/Library)
+        "title_roi": (120, 16, 383, 52),  # album display 26sp do header (presenca do verde display)
         "glow_t": 18,
-        "glow_bound": 20000,        # PLACEHOLDER folgado — c3 calibra
-        "cover": None,              # QUEUE usa GeneratedCover (disc), nao a capa 1-bit -> sem check COVER
+        "glow_bound": 150,          # PISO absoluto (known-good dev=33); album title sumir/mover desvia centenas+ -> pega com folga
+        "cover": None,              # QUEUE usa GeneratedCover (disc, cover=0 sincrono), nao a capa 1-bit -> sem check COVER
     },
 }
 
