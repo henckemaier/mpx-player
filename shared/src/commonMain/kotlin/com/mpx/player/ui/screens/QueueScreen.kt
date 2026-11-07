@@ -126,7 +126,7 @@ private fun QueueList(modifier: Modifier, ui: PlayerUi, listState: LazyListState
                     .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("%02d".format(i + 1), Modifier.width(34.dp), size = 12.sp, color = fg)
+                Txt((i + 1).toString().padStart(2, '0'), Modifier.width(34.dp), size = 12.sp, color = fg)
                 val mark = when {
                     cur -> "▶ "
                     i < ui.index -> "✓ "

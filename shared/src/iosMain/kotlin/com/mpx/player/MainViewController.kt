@@ -38,6 +38,8 @@ import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
 import com.mpx.player.ui.screens.LibraryActions
 import com.mpx.player.ui.screens.LibraryScreen
+import com.mpx.player.ui.screens.QueueActions
+import com.mpx.player.ui.screens.QueueScreen
 import com.mpx.player.ui.screens.SettingsActions
 import com.mpx.player.ui.screens.SettingsScreen
 import com.mpx.player.ui.theme.LocalLandscape
@@ -107,6 +109,12 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     // Back-stack puro ([NavState]), igual ao :app (lá é rememberSaveable; no iOS não há recriação de
     // Activity, remember basta). onSelect = goTo (reordena-sem-dup).
     var nav by remember { mutableStateOf(NavState()) }
+    // Setter VIVO do nav: o lambda fecha sobre o MutableState (via delegate), então lê/escreve o
+    // `nav` ATUAL no momento da chamada — nada de snapshot. Reusado no onSelect do shell e no `play`
+    // da fila. `iosQueueActions` é construído na composição (NÃO em remember) justamente p/ carregar
+    // esse setter vivo sem stale-capture; os outros actions são method refs estáveis (ok em remember).
+    val onSelect: (Destination) -> Unit = { nav = nav.goTo(it) }
+    val queueActions = iosQueueActions(playerViewModel, onSelect)
     // MpxTheme dirigido pelo `settings` REAL do VM: os toggles de tema/cor/fonte da tela CONFIG
     // recolorem a UI inteira ao vivo (não um UserSettings() fixo).
     MpxTheme(settingsUi.settings) {
@@ -132,8 +140,11 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         // EQ: tela comum sobre o EqViewModel; edita/persiste EqSettings (via updateEq
                         // do IosSettingsRepository). Efeito AUDÍVEL (AVAudioUnitEQ) = fatia de áudio futura.
                         Destination.EQ to { EqScreen(eq, eqSel, eqActions) },
+                        // QUEUE: tela comum sobre o mesmo playerUi do PLAY. Fila vazia no simulador
+                        // (sem device) → cai no estado vazio da própria tela. `play` navega p/ PLAY.
+                        Destination.QUEUE to { QueueScreen(playerUi, queueActions) },
                     ),
-                    onSelect = { nav = nav.goTo(it) },
+                    onSelect = onSelect,
                     header = {
                         // Back do iOS (política pop PLENO): botão no cabeçalho, visível só quando há
                         // para onde voltar. NÃO há BackHandler no iOS; swipe nativo = follow-up.
@@ -148,8 +159,8 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         }
                     },
                     version = "1.0",
-                    // QUEUE ainda não portado → apagado e não-tapável (sem aba morta). EQ entrou.
-                    enabled = { it == Destination.PLAY || it == Destination.LIBRARY || it == Destination.CONFIG || it == Destination.EQ },
+                    // Só NowPlaying-cheia/Boot restam p/ as fatias 3/4; QUEUE entrou.
+                    enabled = { it == Destination.PLAY || it == Destination.LIBRARY || it == Destination.CONFIG || it == Destination.EQ || it == Destination.QUEUE },
                 )
             }
         }
@@ -215,6 +226,18 @@ private fun iosEqActions(vm: EqViewModel): EqActions = EqActions(
     loudness = vm::toggleLoudness,
     reset = vm::reset,
     save = vm::saveCustom,
+)
+
+/**
+ * [QueueActions] do host iOS: pick/shuffle/clear delegados ao [PlayerViewModel]; `play` dá play e
+ * NAVEGA p/ PLAY via [onGoTo] — o MESMO setter vivo do nav (não um NavState capturado). Por isso
+ * este builder roda NA composição (sem remember): carrega o setter atual sem stale-capture.
+ */
+private fun iosQueueActions(vm: PlayerViewModel, onGoTo: (Destination) -> Unit): QueueActions = QueueActions(
+    pick = vm::playIndex,
+    shuffle = vm::shuffleQueue,
+    clear = vm::clearQueue,
+    play = { vm.play(); onGoTo(Destination.PLAY) },
 )
 
 /**
