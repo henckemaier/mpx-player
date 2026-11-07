@@ -197,19 +197,25 @@ PROFILES = {
     # check GLOW mede a PRESENCA/EXTENSAO do verde dos fills das bandas (a EQ NAO tem glow=true -> sem
     # halo a colapsar; sensibilidade de presenca estilo nav/library).
     #
-    # TETOS PLACEHOLDER (FOLGADOS): a c3 MEDE o clean AE real do par CI e calibra ceiling=clean*~1.5 +
-    # glow_bound. masks=[] a principio: SE o AE vier limpo (tipo nav ~196) fica sem mascara; SE houver
-    # AA de texto pequeno (tipo Settings) a c3 poe mascara CIRURGICA so no texto (disjunta dos fills/
-    # barras), teto no CLEAN NUNCA inflado. Placeholder folgado p/ a run do baseline nao dar vermelho
-    # espurio (o par so vira gate duro quando o baseline landar).
+    # CALIBRADO (fatia c3) com os numeros REAIS do par CI (run 42416997422, 6ac4ccd): o par e LIMPO —
+    # ESTRUTURAL AE_CLEAN=1728, GLOW dev=2. O glow=2 prova que os FILLS das bandas batem QUASE PERFEITO
+    # (chrome fiel, como o nav); o 1728 em 393x720 (282960 px, ~0.6%) e so o PISO de AA dos poucos
+    # rotulos PEQUENOS (freq labels 9sp VT323, preamp dB/fmt1, labels dos ToggleRow) — da ordem da
+    # Library (810, que tb rodou SEM mascara de texto), NAO o texto-denso/stem-darkening do Settings
+    # (11052, que exigiu R-A). Decisao (Maestro/Bigorna): NAO mascarar — nada a esconder, e mascarar
+    # rotulos espalhados seria fiddly sem ganho (o gate ja morde). ESTRUTURAL ceiling = 1728*~1.5=2600.
+    # GLOW bound = 150 (PISO absoluto; 2*1.5=3 flakaria): dev known-good=2, mas banda sumir/mover desvia
+    # a lit-area em MILHARES -> 150 pega qualquer regressao com folga gigante e nao flaka no AA. A PROVA
+    # DE REGRESSAO (branch -TEMP: shift na EQ -> estrutural na casa dos milhares, estoura 2600) garante
+    # que os tetos nao sao frouxos. NUNCA inflar p/ encobrir layout.
     "eq": {
         "w": 393, "h": 720,
         "tol": 32,
-        "ceiling": 20000,           # PLACEHOLDER folgado (canvas alto, fills+texto) — c3 calibra no clean real
-        "masks": [],                # decidir MEDINDO o clean AE (espero limpo tipo nav; se texto-AA, c3 mascara so-texto)
-        "title_roi": (14, 128, 379, 320),  # faixa das BANDAS (fills de segmento verdes) — presenca; c3 refina
+        "ceiling": 2600,            # known-good CLEAN = 1728 (piso de AA de rotulo pequeno); ~1.5x de folga
+        "masks": [],                # par limpo (glow dev=2, fills perfeitos); piso de AA aceito SEM mascara (como Library)
+        "title_roi": (14, 128, 379, 320),  # faixa das BANDAS (fills de segmento verdes) — presenca
         "glow_t": 18,
-        "glow_bound": 20000,        # PLACEHOLDER folgado (extensao do verde das bandas) — c3 calibra
+        "glow_bound": 150,          # PISO absoluto (known-good dev=2); banda sumir/mover desvia milhares -> pega com folga
         "cover": None,              # EQ nao tem a capa 1-bit -> sem check COVER
     },
 }
