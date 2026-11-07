@@ -120,6 +120,20 @@ jobs:
             echo "::warning::PNG iOS do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
           fi
 
+      # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
+      # Android commitado (ab/nowplaying-android.png), com MASCARA na faixa dinamica
+      # (cursor / medidores L-R / barras do Spectrum) e tolerancia de vizinhanca ±1px p/
+      # absorver o shift sub-pixel da fonte VT323 no Skia — mas CONTINUA cobrando o glow do
+      # text-shadow do titulo. Falha o job se AE > teto (metrica, mascaras e calibragem
+      # documentadas em ab/ab_diff.py). Roda num venv p/ driblar o PEP 668 do python do
+      # runner. Vem ANTES do upload (que é if:always()), entao os PNGs sobem mesmo num FAIL.
+      - name: A/B pixel-diff mascarado (gate duro de fidelidade iOS x Android)
+        run: |
+          set -eo pipefail
+          python3 -m venv /tmp/abvenv
+          /tmp/abvenv/bin/python -m pip install --quiet Pillow
+          /tmp/abvenv/bin/python ab/ab_diff.py ab/nowplaying-android.png ab/nowplaying-ios.png
+
       # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
       # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
       # automático é a próxima fatia; aqui é diff visual. if-no-files-found: warn — o baseline
