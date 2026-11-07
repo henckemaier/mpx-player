@@ -12,8 +12,8 @@
 #                          Checks: ESTRUTURAL + GLOW. SEM cover (a grade de playlists usa
 #                          PlaylistCover(photo=null) → GeneratedCover vetorial, não a capa 1-bit).
 #   settings   (393x760) — SettingsScreen (CONFIG.SYS, seção CORES aberta via initialOpen=2).
-#                          Checks: ESTRUTURAL + GLOW (PREVIEW "SIGNAL//DECAY_"). SEM cover.
-#                          Tetos/máscaras PLACEHOLDER até a fatia c3 calibrar (ver o perfil abaixo).
+#                          Checks: ESTRUTURAL (R-A: MÁSCARA-DE-TEXTO, gateia o CHROME) + GLOW
+#                          (PREVIEW "SIGNAL//DECAY_"). SEM cover. Calibrado na fatia c3.
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -101,33 +101,55 @@ PROFILES = {
         "glow_bound": 150,          # known-good dev=39; folga modesta (lit-area de PRESENCA do nome)
         "cover": None,              # Library NAO tem a capa 1-bit -> sem check COVER
     },
-    # SettingsScreen (CONFIG.SYS, secao CORES aberta via initialOpen=2). 3o par A/B.
-    # ATENCAO: os numeros abaixo sao PLACEHOLDER (ceiling/glow_bound ALTOS e masks/ROIs ESTIMADOS a
-    # olho sobre o layout) — a fatia c3 CALIBRA com os pixels REAIS do par CI (baseline Android x
-    # PNG-iOS do run verde): ceiling = AE_limpo*~1.5; glow_bound = folga modesta sobre o dev real;
-    # masks/ROIs medidos no baseline. Ate o baseline landar, o CI PULA este diff (::warning::), logo
-    # placeholder nao derruba o job. Teto/bound propositalmente FOLGADOS p/ a 1a run do baseline
-    # (commit deliberado) passar e dar espaco p/ apertar no c3.
+    # SettingsScreen (CONFIG.SYS, secao CORES aberta via initialOpen=2). 3o par A/B. CALIBRADO na
+    # fatia c3 (decisao R-A do Maestro) com os pixels REAIS do par CI (baseline Android x PNG-iOS do
+    # run 42400339184).
     #
-    # GLOW: a ROI cobre o PREVIEW "SIGNAL//DECAY_" (Txt display=true, glow=true) — o UNICO glow real
-    # da secao CORES (text-shadow blur 18f, mesmo mecanismo do titulo do NowPlaying). Mede a lit-area
-    # do halo (AE/SAD sao CEGOS ao halo tenue; a lit-area nao). Os 6 swatches de fosforo com .glow
-    # (blur do box colorido) sao o RISCO de ruido no estrutural (watch-item (e)): se somarem AE,
-    # o c3 calibra no AE LIMPO ou MASCARA os swatches (como o ♥ na Library) — NUNCA infla o teto.
+    # POR QUE R-A (mascara-de-TEXTO no estrutural): o par cru deu AE=18034 (cru, ab_diff) -> FAIL no
+    # placeholder. Diagnostico (eu + Lente): NAO e regressao de layout — e stem-darkening/AA do TEXTO
+    # DE CORPO (JetBrains Mono pequeno) iOS/skiko x Android (peso de raster do glifo). Prova de que e
+    # texto e nao layout: os textos right-aligned terminam no MESMO x (advances batem), zero tofu,
+    # chrome fiel item-a-item. Numa tela DENSA de texto isso empilha. R-A = EXCLUIR o texto de corpo
+    # do estrutural (mesma categoria do cursor/spectrum/♥, so mais area) e GATEAR O CHROME (molduras,
+    # barras/fills accent, quadrados de swatch, segmentos, dividers, bg + suas bordas). O GLOW segue
+    # cobrando o titulo "SIGNAL//DECAY_" (lit-area do halo). ~49% de area mascarada e ESPERADO numa
+    # tela de texto; a PROVA DE REGRESSAO (grid-shift +12dp -> estrutural estoura) garante que as
+    # mascaras NAO engoliram o chrome.
     #
-    # ESTRUTURAL mask: so o blinkingCursor do header ("_" apos ":: SELECIONE UMA OPCAO [1-6]"), que
-    # no 1o frame vale "_" (fundo accent) — faixa dinamica, mascarada (watch-item (d)). Coords
-    # medidas no baseline no c3.
+    # MASCARAS-DE-TEXTO: cada retangulo cobre SO uma banda de texto de corpo/header, DISJUNTO de (a)
+    # os 4 quadrados de swatch (y~213-235), (b) o quadrado verde da PERSONALIZADA (x<58), (c) as
+    # bordas/fills que gateiam o chrome, (d) a ROI de GLOW. Verificado visualmente (chrome sobrevive).
+    #
+    # CLEAN structural AE (medido no ab_diff, pos-mascara) = 11052. TETO = 11052 * ~1.5 = 16578 (folga
+    # MODESTA; NUNCA ~27000 = inflar p/ encobrir layout, VETADO). RAW (sem mascara) era 18034.
     "settings": {
         "w": 393, "h": 760,
         "tol": 32,
-        "ceiling": 6000,            # PLACEHOLDER alto (canvas 393x760 > library); c3 aperta p/ ~AE_limpo*1.5
+        "ceiling": 16578,           # known-good CLEAN = 11052 (pos-mascara de texto); ~1.5x de folga
         "masks": [
-            (183, 30, 206, 58),     # PLACEHOLDER: blinkingCursor "_" do header (medir x/y reais no c3)
+            # Retangulos (x0,y0,x1,y1) sobre BANDAS DE TEXTO DE CORPO (excluidas do estrutural; o
+            # chrome entre/ao redor sobrevive). Conteudo x∈[10,383].
+            (10, 9, 383, 54),       # top header: "C:\> EDIT CONFIG.SYS" + "SELECIONE...[1-6]" + CURSOR
+            (20, 80, 379, 96),      # [1] APARENCIA header (texto; bordas y~72/106 sobrevivem)
+            (20, 120, 379, 159),    # [2] CORES accent-bar (texto onAccent; bordas top/bottom do fill sobrevivem)
+            (14, 183, 383, 197),    # label "FOSFORO (COR DE DESTAQUE)"
+            (14, 238, 383, 252),    # labels dos swatches (PRESERVA os quadrados coloridos em y~213-235)
+            (58, 261, 383, 296),    # "PERSONALIZADA" + "#3DFF8F" (PRESERVA o swatch verde da esquerda, x<58)
+            (20, 355, 379, 369),    # FUNDO seg "PRETO #040704" (bordas do segmento sobrevivem)
+            (20, 381, 379, 395),    # FUNDO seg "OLED #000000"
+            (14, 419, 383, 441),    # label "PREVIEW"
+            (20, 539, 379, 583),    # [3] IMPORTAR header texto
+            (20, 594, 379, 635),    # [5] AUDIO header texto
+            (20, 648, 379, 690),    # [6] SOBRE header texto
+            (10, 714, 383, 727),    # rodape "(C) 2026 MPX//OS / F10 = SAVE & EXIT"
         ],
-        "title_roi": (18, 430, 320, 515),  # PLACEHOLDER: bbox do PREVIEW "SIGNAL//DECAY_" + halo (medir no c3)
+        # GLOW: ROI do PREVIEW "SIGNAL//DECAY_" (Txt display=true, glow=true) — o UNICO glow real da
+        # secao CORES (text-shadow blur 18f, mesmo mecanismo do titulo do NowPlaying). O topo da ROI
+        # fica ABAIXO da barra accent "> NOW PLAYING" (y446-463, CHROME que fica no estrutural); a ROI
+        # cobre titulo+halo+"NULL SECTOR". Mede a lit-area do halo (AE/SAD sao CEGOS ao halo tenue).
+        "title_roi": (8, 466, 386, 515),
         "glow_t": 18,
-        "glow_bound": 3000,         # PLACEHOLDER alto; c3 aperta p/ folga modesta sobre o dev real
+        "glow_bound": 1650,         # known-good dev=1093 (ROI nova); folga modesta ~1.5x
         "cover": None,              # CONFIG nao tem a capa 1-bit -> sem check COVER
     },
 }
