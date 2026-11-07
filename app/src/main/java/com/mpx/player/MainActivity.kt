@@ -41,28 +41,30 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mpx.player.data.AndroidTechInfoReader
 import com.mpx.player.model.UserSettings
+import com.mpx.player.ui.AndroidLibraryViewModel
 import com.mpx.player.ui.EqViewModel
-import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.PlayerViewModel
-import com.mpx.player.ui.SettingsViewModel
+import com.mpx.player.ui.AndroidSettingsViewModel
 import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.MpxHeader
 import com.mpx.player.ui.components.MpxNav
 import com.mpx.player.ui.components.MpxNavRail
+import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.components.Tab
 import com.mpx.player.ui.components.scanlines
+import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.mpxViewModel
+import com.mpx.player.ui.screens.AndroidLibraryScreen
 import com.mpx.player.ui.screens.BootScreen
 import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
-import com.mpx.player.ui.screens.LibraryScreen
-import com.mpx.player.ui.screens.NowPlayingActions
 import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen
-import com.mpx.player.ui.screens.SettingsScreen
+import com.mpx.player.ui.screens.AndroidSettingsScreen
 import com.mpx.player.ui.theme.LocalLandscape
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
@@ -78,16 +80,21 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        container.player.connect()
+        container.audioPlayer.connect()
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
-            MpxTheme(settings) { MpxRoot(container, settings) }
+            MpxTheme(settings) {
+                // Provê o loader de capa (Android: MediaStore + arte embutida) ao Cover comum.
+                CompositionLocalProvider(LocalCoverLoader provides container.covers) {
+                    MpxRoot(container, settings)
+                }
+            }
         }
     }
 
     override fun onStart() {
         super.onStart()
-        container.player.connect()
+        container.audioPlayer.connect()
     }
 }
 
@@ -96,7 +103,7 @@ private val AUDIO_PERMISSION =
     else Manifest.permission.READ_EXTERNAL_STORAGE
 
 @Composable
-private fun MpxRoot(container: AppContainer, settings: UserSettings) {
+private fun MpxRoot(container: AndroidAppContainer, settings: UserSettings) {
     val context = LocalContext.current
     val st = Mpx.style
     var granted by remember {
@@ -158,7 +165,7 @@ private fun MpxRoot(container: AppContainer, settings: UserSettings) {
 
 @Composable
 private fun MainShell(tab: Tab, onTab: (Tab) -> Unit, libraryFiles: Int, onReboot: () -> Unit) {
-    val playerVm = mpxViewModel { PlayerViewModel(it) }
+    val playerVm = mpxViewModel { PlayerViewModel(it, AndroidTechInfoReader(it.context)) }
     val player by playerVm.ui.collectAsStateWithLifecycle()
 
     if (Mpx.landscape) {
@@ -220,9 +227,9 @@ private fun MainContent(
             )
         }
         Tab.LIB -> {
-            val vm = mpxViewModel { LibraryViewModel(it) }
+            val vm = mpxViewModel { AndroidLibraryViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            LibraryScreen(ui, player, vm, onOpenPlayer = { onTab(Tab.PLAY) })
+            AndroidLibraryScreen(ui, player, vm, onOpenPlayer = { onTab(Tab.PLAY) })
         }
         Tab.QUEUE -> QueueScreen(
             player,
@@ -253,9 +260,9 @@ private fun MainContent(
             )
         }
         Tab.CFG -> {
-            val vm = mpxViewModel { SettingsViewModel(it) }
+            val vm = mpxViewModel { AndroidSettingsViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            SettingsScreen(ui, vm, onReboot)
+            AndroidSettingsScreen(ui, vm, onReboot)
         }
     }
 }

@@ -4,8 +4,6 @@ import android.content.ContentUris
 import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
-import com.mpx.player.model.Album
-import com.mpx.player.model.Artist
 import com.mpx.player.model.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,26 +16,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class LibraryState(
-    val tracks: List<Track> = emptyList(),
-    val albums: List<Album> = emptyList(),
-    val artists: List<Artist> = emptyList(),
-    val scanning: Boolean = false,
-    val scanned: Boolean = false,
-    val newSinceLastScan: Int = 0,
-) {
-    private val byId: Map<Long, Track> by lazy { tracks.associateBy { it.id } }
-    fun track(id: Long): Track? = byId[id]
+// LibraryState foi movido para :shared/commonMain (com.mpx.player.data.LibraryState).
 
-    private val byKey: Map<String, Track> by lazy { tracks.associateBy { it.key } }
-    fun trackByKey(key: String): Track? = byKey[key]
-    fun tracksForKeys(keys: List<String>): List<Track> = keys.mapNotNull { byKey[it] }
-}
-
-class LibraryRepository(
+class AndroidLibraryRepository(
     private val context: Context,
     private val overrides: OverrideRepository,
-) {
+) : LibraryRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private var rawTracks: List<Track> = emptyList()
@@ -46,7 +30,7 @@ class LibraryRepository(
     @Volatile private var scanningFlag = false
 
     private val _state = MutableStateFlow(LibraryState())
-    val state: StateFlow<LibraryState> = _state.asStateFlow()
+    override val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     init {
         // Re-aplica os overrides (título/capa) sem re-consultar o MediaStore quando eles mudam.
@@ -66,7 +50,7 @@ class LibraryRepository(
     }
 
     /** Re-escaneia no escopo do repositório (sobrevive à troca de tela/aba). */
-    fun rescan() = scope.launch { scan() }
+    override fun rescan() { scope.launch { scan() } }
 
     @Synchronized
     private fun rebuild() {
@@ -75,17 +59,9 @@ class LibraryRepository(
             val o = ov[t.key] ?: return@map t
             t.copy(title = o.title ?: t.title, coverOverride = o.cover ?: t.coverOverride)
         }
-        val albums = tracks.groupBy { it.albumId }.map { (id, list) ->
-            Album(
-                id = id,
-                title = list.first().album,
-                artist = list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key,
-                tracks = list.sortedWith(compareBy({ it.trackNumber }, { it.displayName })),
-            )
-        }.sortedBy { it.title.uppercase() }
-        val artists = tracks.groupBy { it.artist }.map { (name, list) ->
-            Artist(name, list.sortedWith(compareBy({ it.album }, { it.trackNumber })))
-        }.sortedBy { it.name.uppercase() }
+        // Agrupamento puro (comum a Android/iOS) em :shared — só os overrides + o set do
+        // _state ficam aqui, no Android.
+        val (albums, artists) = buildAlbumsAndArtists(tracks)
         _state.value = LibraryState(tracks, albums, artists, scanning = scanningFlag, scanned = scanned, newSinceLastScan = newCount)
     }
 
@@ -126,7 +102,7 @@ class LibraryRepository(
                     val artist = c.getString(iArtist).orUnknown()
                     out += Track(
                         id = id,
-                        uri = ContentUris.withAppendedId(collection, id),
+                        uri = ContentUris.withAppendedId(collection, id).toString(),
                         title = c.getString(iTitle) ?: c.getString(iName).orEmpty(),
                         artist = artist,
                         album = c.getString(iAlbum).orUnknown(),
