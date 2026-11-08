@@ -52,6 +52,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mpx.player.BuildConfig
 import com.mpx.player.data.DownloadState
 import com.mpx.player.data.DownloadStatus
+import com.mpx.player.data.RemoteState
+import com.mpx.player.data.RemoteStatus
 import com.mpx.player.data.UpdateState
 import com.mpx.player.data.UpdateStatus
 import com.mpx.player.model.UserSettings
@@ -85,6 +87,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
     val dl by vm.download.collectAsStateWithLifecycle()
     val lrcSync by vm.lyricsSync.collectAsStateWithLifecycle()
     val up by vm.update.collectAsStateWithLifecycle()
+    val desktop by vm.desktop.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableIntStateOf(0) }
 
     val pickPlaylist = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -106,7 +109,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
         Column(Modifier.fillMaxWidth().frame().padding(horizontal = 10.dp, vertical = 8.dp)) {
             Txt("C:\\> EDIT CONFIG.SYS", size = 11.sp, color = c.dim, lineHeight = 17.sp)
             Row {
-                Txt(":: SELECIONE UMA OPÇÃO [1-6]", size = 11.sp, color = c.dim, lineHeight = 17.sp)
+                Txt(":: SELECIONE UMA OPÇÃO [1-7]", size = 11.sp, color = c.dim, lineHeight = 17.sp)
                 val cur = blinkingCursor()
                 Txt(cur, Modifier.background(if (cur == "_") c.accent else Color.Transparent), size = 11.sp, color = c.onAccent, lineHeight = 17.sp)
             }
@@ -258,11 +261,86 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             }
         }
 
+        Section(7, "DESKTOP", "SYNC", open) { open = it }
+        if (open == 7) SectionBody {
+            DesktopBody(desktop, onConnect = vm::connectDesktop, onDisconnect = vm::disconnectDesktop)
+        }
+
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Txt("(C) 2026 MPX//OS", size = 10.sp, color = c.dim)
             Txt("F10 = SAVE & EXIT", size = 10.sp, color = c.dim)
         }
+    }
+}
+
+/**
+ * CONECTAR AO DESKTOP (desktop-sync): IP:porta + token + CONECTAR. Estado DESCONECTADO /
+ * CONECTANDO / CONECTADO a <host> [N faixas] / ERRO. Pré-preenche o host/token já pareado.
+ */
+@Composable
+private fun DesktopBody(st: RemoteState, onConnect: (String, String) -> Unit, onDisconnect: () -> Unit) {
+    val c = Mpx.colors
+    var host by rememberSaveable(st.host) { mutableStateOf(st.host ?: "") }
+    var token by rememberSaveable { mutableStateOf("") }
+    val connecting = st.status == RemoteStatus.CONNECTING
+    val connected = st.status == RemoteStatus.CONNECTED
+
+    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Txt("AGENTE NO PC (MESMA REDE WI-FI). IP:PORTA + TOKEN DO CONSOLE.", size = 10.sp, color = c.dim, maxLines = 2)
+        TerminalField("IP", "192.168.1.33:8080", host, enabled = !connecting) { host = it }
+        TerminalField("TK", "cole o token aqui", token, enabled = !connecting) { token = it }
+
+        when (st.status) {
+            RemoteStatus.CONNECTING -> {
+                SegmentBar(20, 10, height = 20.dp)
+                Txt("CONECTANDO A ${st.host ?: host} ...", size = 12.sp)
+            }
+            RemoteStatus.CONNECTED ->
+                Txt("CONECTADO A ${st.host} · ${st.trackCount} FAIXAS", size = 12.sp)
+            RemoteStatus.ERROR ->
+                Txt("ERRO: ${st.error ?: "FALHA"}", size = 12.sp, color = c.dim, maxLines = 2)
+            RemoteStatus.DISCONNECTED ->
+                Txt("DESCONECTADO", size = 12.sp, color = c.dim)
+        }
+
+        if (connected) {
+            TextButton("> DESCONECTAR", Modifier.fillMaxWidth().height(44.dp), border = c.accent, onClick = onDisconnect)
+        } else {
+            TextButton(
+                if (connecting) "CONECTANDO..." else "> CONECTAR",
+                Modifier.fillMaxWidth().height(44.dp),
+                filled = host.isNotBlank() && token.isNotBlank() && !connecting,
+            ) { if (host.isNotBlank() && token.isNotBlank() && !connecting) onConnect(host.trim(), token.trim()) }
+        }
+        Txt("QR CODE + DESCOBERTA AUTOMÁTICA VÊM DEPOIS.", size = 10.sp, color = c.dim, maxLines = 2)
+    }
+}
+
+/** Campo de texto no estilo terminal (prefixo + BasicTextField num frame), igual ao do downloader. */
+@Composable
+private fun TerminalField(prefix: String, placeholder: String, value: String, enabled: Boolean, onValueChange: (String) -> Unit) {
+    val c = Mpx.colors
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).frame(c.accent).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Txt("$prefix>", size = 13.sp)
+        Box(Modifier.weight(1f)) {
+            if (value.isEmpty()) Txt(placeholder, size = 13.sp, color = c.dim)
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                enabled = enabled,
+                textStyle = TextStyle(color = c.accent, fontSize = 13.sp, fontFamily = Mpx.style.mono),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (value.isNotEmpty() && enabled) Txt("[X]", Modifier.tap { onValueChange("") }, size = 13.sp)
     }
 }
 

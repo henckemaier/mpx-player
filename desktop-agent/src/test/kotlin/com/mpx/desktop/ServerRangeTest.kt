@@ -1,6 +1,7 @@
 package com.mpx.desktop
 
 import io.ktor.client.request.get
+import io.ktor.client.request.head
 import io.ktor.client.request.header
 import io.ktor.client.statement.readBytes
 import io.ktor.http.HttpHeaders
@@ -81,6 +82,17 @@ class ServerRangeTest {
         assertEquals(10, body.size)
         assertEquals(90.toByte(), body[0])
         assertEquals(99.toByte(), body[9])
+    }
+
+    @Test
+    fun head_200_eAcceptRanges_semCorpo() = testApplication {
+        // AutoHeadResponse: HEAD /stream/{id} roda o GET e descarta o corpo -> 200 + Accept-Ranges
+        // (players que fazem HEAD antes do GET+Range). Sem o plugin, HEAD caria em 404.
+        application { mpxAgentModule(library, token, "test") }
+        val r = client.head("/stream/$id") { header(HttpHeaders.Authorization, "Bearer $token") }
+        assertEquals(HttpStatusCode.OK, r.status)
+        assertEquals("bytes", r.headers[HttpHeaders.AcceptRanges])
+        assertEquals(0, r.readBytes().size, "HEAD nao tem corpo")
     }
 
     @Test

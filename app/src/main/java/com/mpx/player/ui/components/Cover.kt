@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.mpx.player.MpxApp
 import com.mpx.player.data.CoverArt
 import com.mpx.player.model.Track
+import com.mpx.player.model.TrackOrigin
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxColors
 import androidx.compose.ui.platform.LocalContext
@@ -58,6 +59,8 @@ fun Cover(track: Track?, modifier: Modifier = Modifier, disc: Boolean = false, s
             t.coverOverride != null ->
                 loader.loadFile(File(t.coverOverride), st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
             st.coverStyle == 0 -> null
+            t.origin == TrackOrigin.REMOTE ->
+                t.artUri?.let { loader.loadRemote(t.id, it, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb()) }
             else -> loader.load(t.albumId, t.uri, st.coverStyle, st.monoCovers, c.accent.toArgb(), c.panel.toArgb())
         }
     }

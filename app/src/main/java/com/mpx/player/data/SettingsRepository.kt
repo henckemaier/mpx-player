@@ -41,6 +41,8 @@ class SettingsRepository(private val context: Context) {
         val bass = booleanPreferencesKey("fx_bass")
         val surround = booleanPreferencesKey("fx_surround")
         val loud = booleanPreferencesKey("fx_loud")
+        val dsHost = stringPreferencesKey("ds_host")
+        val dsToken = stringPreferencesKey("ds_token")
     }
 
     val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
@@ -71,6 +73,8 @@ class SettingsRepository(private val context: Context) {
                 surround = this[K.surround] ?: false,
                 loudness = this[K.loud] ?: false,
             ),
+            desktopHost = this[K.dsHost],
+            desktopToken = this[K.dsToken],
         )
     }
 
@@ -96,6 +100,15 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLrcTree(v: String?) = context.dataStore.edit { if (v == null) it.remove(K.lrcTree) else it[K.lrcTree] = v }
     suspend fun setLastScan(v: Long) = context.dataStore.edit { it[K.lastScan] = v }
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
+
+    /** Grava (ou limpa, com null) o agente desktop pareado numa única escrita. */
+    suspend fun setDesktop(host: String?, token: String?) = context.dataStore.edit {
+        if (host.isNullOrBlank() || token.isNullOrBlank()) {
+            it.remove(K.dsHost); it.remove(K.dsToken)
+        } else {
+            it[K.dsHost] = host; it[K.dsToken] = token
+        }
+    }
 
     suspend fun updateEq(transform: (EqSettings) -> EqSettings) = context.dataStore.edit { p ->
         val cur = p.toSettings().eq

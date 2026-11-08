@@ -17,6 +17,7 @@ import com.mpx.player.AppContainer
 import com.mpx.player.MpxApp
 import com.mpx.player.data.LibraryState
 import com.mpx.player.data.PlaylistLogic
+import com.mpx.player.data.RemoteState
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
 import com.mpx.player.model.EqPresets
@@ -437,6 +438,12 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
 
     fun cancelLyricsSync() { lyricsJob?.cancel() }
     fun clearLyricsSync() { _lyricsSync.value = LyricsSyncUi() }
+
+    // ---- Conectar ao agente desktop (desktop-sync)
+    val desktop: StateFlow<RemoteState> = app.remote.state.state(this, RemoteState())
+
+    fun connectDesktop(host: String, token: String) = app.remote.connect(host, token)
+    fun disconnectDesktop() = app.remote.disconnect()
 
     // ---- Auto-update do app (GitHub Releases)
     val update = app.updater.state
