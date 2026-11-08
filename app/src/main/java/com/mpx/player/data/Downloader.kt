@@ -41,13 +41,13 @@ data class DownloadState(
 /**
  * Baixa áudio (MP3) de links do YouTube Music via yt-dlp (youtubedl-android), embute capa e
  * metadados, busca letra sincronizada no LRCLIB e publica tudo no MediaStore (Music/MPX) para
- * aparecer na biblioteca. A capa sai filtrada no estilo do app pelo [CoverArtLoader] no render.
+ * aparecer na biblioteca. A capa sai filtrada no estilo do app pelo pipeline de capa no render.
  */
 class Downloader(
     private val context: Context,
-    private val library: LibraryRepository,
-    private val lyrics: LyricsRepository,
-    private val settings: SettingsRepository,
+    private val library: AndroidLibraryRepository,
+    private val lyrics: AndroidLyricsRepository,
+    private val settings: AndroidSettingsRepository,
 ) {
     private val _state = MutableStateFlow(DownloadState())
     val state: StateFlow<DownloadState> = _state.asStateFlow()
@@ -249,7 +249,7 @@ class Downloader(
     }
 
     /** Salva `<base>.lrc` (base = nome do arquivo sem extensão, lowercase) se o LRCLIB tiver letra sincronizada. */
-    private fun fetchAndStoreLyrics(file: File, meta: Tags): Boolean {
+    private suspend fun fetchAndStoreLyrics(file: File, meta: Tags): Boolean {
         val synced = runCatching { lyrics.fetchSynced(meta.title, meta.artist, meta.album, meta.durationSec.toLong()) }
             .getOrNull()?.takeIf { it.isNotBlank() } ?: return false
         return runCatching {

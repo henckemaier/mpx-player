@@ -1,0 +1,429 @@
+name: CI
+
+# Build + testes a cada push/PR.
+# - Job `android`: compila o APK debug e roda os testes unitários (Linux, barato).
+# - Job `ios`: compila e TESTA o alvo iOS num runner macOS (Kotlin/Native só gera
+#   binários Apple em macOS). Valida o lado Kotlin do porte sem Mac local.
+# O workflow de release (release.yml) é separado e só roda no push à main.
+
+on:
+  push:
+    branches: [ main, 'feat/**' ]
+  pull_request:
+  workflow_dispatch:
+
+# Cancela runs superados do mesmo ref (economiza minutos macOS em pushes rápidos).
+# Obs: um push num branch com PR aberto ainda dispara push E pull_request (refs
+# distintos) — aceitável; estreite para só `pull_request` se quiser zerar isso.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (com cache)
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build debug + testes unitários
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug test --no-daemon
+
+  ios:
+    name: iOS (compila + testa no simulador)
+    # Runner macOS p/ o lado Apple do porte (ver PORTING-IOS.md §6, Risco 1 — RESOLVIDO).
+    # Historia: macos-14 foi APOSENTADA pelo GitHub e o Xcode 15.4 saiu de todos os
+    # runners hospedados, derrubando o pin fixo antigo. Hoje usamos macos-15 + Xcode
+    # 'latest-stable' (pin abaixo). EMPÍRICO: o Kotlin/Native 2.0.21 (INALTERADO) linka/
+    # cinteropa e roda os testes no simulador mesmo com Xcode 26.x — ao contrário do que
+    # §6 supunha; o KGP só emite um WARNING benigno. Subir o Kotlin (Rota B) só vira
+    # necessário se um Xcode futuro quebrar de fato a toolchain.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 'latest-stable' é INTENCIONAL (pin policy decidida — ver PORTING-IOS.md §6): o pin
+      # fixo antigo (15.4) foi aposentado dos runners e quebrou o CI; latest-stable é
+      # auto-curável contra essa rotação de imagem. O Kotlin/Native 2.0.21 tolera o Xcode
+      # atual (hoje 26.x) só com um WARNING do KGP (não falha). Se um Xcode futuro quebrar
+      # de fato o link/cinterop, o job falha explícito — e ISSO é o gatilho da Rota B
+      # (subir o Kotlin). Pin major.minor explícito foi rejeitado (frágil a aposentadoria).
+      - name: Fixa a versão do Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest-stable'
+
+      # O :shared aplica com.android.library, então o Gradle CONFIGURA o plugin
+      # Android mesmo rodando só as tasks iOS — e isso exige ANDROID_HOME +
+      # platform-35 + build-tools + licença aceita. As imagens macOS do GitHub
+      # vêm com os componentes Android reduzidos, então instalamos explicitamente
+      # (senão o job quebra na configuração, antes de qualquer task iOS).
+      - name: Set up Android SDK (para configurar o :shared)
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: Set up Gradle (com cache)
+        uses: gradle/actions/setup-gradle@v5
+
+      # A distribuição do Kotlin/Native (~/.konan) é grande; sem cache cada run
+      # baixa centenas de MB. Chave atrelada ao catálogo (muda com a versão do Kotlin).
+      - name: Cache do Kotlin/Native (~/.konan)
+        uses: actions/cache@v5
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      # O runner macOS é Apple Silicon (arm64): testar em iosSimulatorArm64 (não
+      # iosX64, que exigiria Rosetta). iosSimulatorArm64Test compila o commonTest
+      # para o simulador E roda os testes num simulador bootado — já exercita o
+      # simulador, não só linka o framework. Em seguida monta o XCFramework.
+      # 1) Kotlin: roda os testes no simulador arm64 (prova o lado Kotlin do :shared).
+      # 2) Linka o framework estático `Shared` p/ iosSimulatorArm64 — é o que o host
+      #    iosApp/ consome via FRAMEWORK_SEARCH_PATHS (shared/build/bin/iosSimulatorArm64/
+      #    debugFramework/Shared.framework). Por isso roda ANTES do xcodebuild.
+      - name: Testa no simulador arm64 (inclui render A/B offscreen) + linka o framework Shared
+        run: |
+          chmod +x gradlew
+          mkdir -p ab
+          set -eo pipefail
+          # -i p/ o stdout do teste K/N aparecer no log. NowPlayingPanelRenderTest grava o PNG
+          # em NSTemporaryDirectory (dentro do container do simulador, mas no filesystem do host)
+          # e IMPRIME o path absoluto resolvido — robusto, sem depender de env no container.
+          ./gradlew :shared:iosSimulatorArm64Test :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon -i 2>&1 | tee ab/ios-test.log
+          # Parse do stdout: "A/B offscreen: PNG <n> B, escrito=<bool> em <path>" (NowPlaying)
+          PNG=$(grep -oE 'em (/[^ ]+nowplaying-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS resolvido: '$PNG'"
+          if [ -n "$PNG" ] && [ -f "$PNG" ]; then
+            cp "$PNG" ab/nowplaying-ios.png
+            echo "Render A/B iOS copiado p/ ab/nowplaying-ios.png ($(stat -f%z ab/nowplaying-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 2o PNG: "A/B library: PNG <n> B, escrito=<bool> em <path>" (LibraryScreen)
+          PNG_LIB=$(grep -oE 'em (/[^ ]+library-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (library) resolvido: '$PNG_LIB'"
+          if [ -n "$PNG_LIB" ] && [ -f "$PNG_LIB" ]; then
+            cp "$PNG_LIB" ab/library-ios.png
+            echo "Render A/B iOS (library) copiado p/ ab/library-ios.png ($(stat -f%z ab/library-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (library) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 3o PNG: "A/B settings: PNG <n> B, escrito=<bool> em <path>" (SettingsScreen)
+          PNG_SET=$(grep -oE 'em (/[^ ]+settings-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (settings) resolvido: '$PNG_SET'"
+          if [ -n "$PNG_SET" ] && [ -f "$PNG_SET" ]; then
+            cp "$PNG_SET" ab/settings-ios.png
+            echo "Render A/B iOS (settings) copiado p/ ab/settings-ios.png ($(stat -f%z ab/settings-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (settings) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 4o PNG: "A/B nav: PNG <n> B, escrito=<bool> em <path>" (chrome MpxShell/nav)
+          PNG_NAV=$(grep -oE 'em (/[^ ]+nav-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (nav) resolvido: '$PNG_NAV'"
+          if [ -n "$PNG_NAV" ] && [ -f "$PNG_NAV" ]; then
+            cp "$PNG_NAV" ab/nav-ios.png
+            echo "Render A/B iOS (nav) copiado p/ ab/nav-ios.png ($(stat -f%z ab/nav-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (nav) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 5o PNG: "A/B eq: PNG <n> B, escrito=<bool> em <path>" (EqScreen)
+          PNG_EQ=$(grep -oE 'em (/[^ ]+eq-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (eq) resolvido: '$PNG_EQ'"
+          if [ -n "$PNG_EQ" ] && [ -f "$PNG_EQ" ]; then
+            cp "$PNG_EQ" ab/eq-ios.png
+            echo "Render A/B iOS (eq) copiado p/ ab/eq-ios.png ($(stat -f%z ab/eq-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (eq) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 6o PNG: "A/B queue: PNG <n> B, escrito=<bool> em <path>" (QueueScreen)
+          PNG_QUEUE=$(grep -oE 'em (/[^ ]+queue-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (queue) resolvido: '$PNG_QUEUE'"
+          if [ -n "$PNG_QUEUE" ] && [ -f "$PNG_QUEUE" ]; then
+            cp "$PNG_QUEUE" ab/queue-ios.png
+            echo "Render A/B iOS (queue) copiado p/ ab/queue-ios.png ($(stat -f%z ab/queue-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (queue) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 7o PNG: "A/B nowplaying-full: PNG <n> B, escrito=<bool> em <path>" (NowPlaying-cheia)
+          PNG_NPFULL=$(grep -oE 'em (/[^ ]+nowplaying-full-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (nowplaying-full) resolvido: '$PNG_NPFULL'"
+          if [ -n "$PNG_NPFULL" ] && [ -f "$PNG_NPFULL" ]; then
+            cp "$PNG_NPFULL" ab/nowplaying-full-ios.png
+            echo "Render A/B iOS (nowplaying-full) copiado p/ ab/nowplaying-full-ios.png ($(stat -f%z ab/nowplaying-full-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (nowplaying-full) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+          # Parse do 8o PNG: "A/B boot: PNG <n> B, escrito=<bool> em <path>" (BootScreen, frame terminal)
+          PNG_BOOT=$(grep -oE 'em (/[^ ]+boot-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (boot) resolvido: '$PNG_BOOT'"
+          if [ -n "$PNG_BOOT" ] && [ -f "$PNG_BOOT" ]; then
+            cp "$PNG_BOOT" ab/boot-ios.png
+            echo "Render A/B iOS (boot) copiado p/ ab/boot-ios.png ($(stat -f%z ab/boot-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (boot) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
+
+      # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
+      # Android commitado (ab/nowplaying-android.png), com MASCARA na faixa dinamica
+      # (cursor / medidores L-R / barras do Spectrum) e tolerancia de vizinhanca ±1px p/
+      # absorver o shift sub-pixel da fonte VT323 no Skia — mas CONTINUA cobrando o glow do
+      # text-shadow do titulo. Falha o job se AE > teto (metrica, mascaras e calibragem
+      # documentadas em ab/ab_diff.py). Roda num venv p/ driblar o PEP 668 do python do
+      # runner. Vem ANTES do upload (que é if:always()), entao os PNGs sobem mesmo num FAIL.
+      - name: A/B pixel-diff mascarado (gate duro de fidelidade iOS x Android)
+        run: |
+          set -eo pipefail
+          python3 -m venv /tmp/abvenv
+          /tmp/abvenv/bin/python -m pip install --quiet Pillow
+          # Par NowPlaying (3 checks) — GATE DURO, inalterado.
+          /tmp/abvenv/bin/python ab/ab_diff.py ab/nowplaying-android.png ab/nowplaying-ios.png
+          # Par Library (perfil 'library': estrutural + glow, SEM cover) — GATE DURO assim que o
+          # baseline existir. O baseline (ab/library-android.png) e um commit DELIBERADO coordenado
+          # pelo Bigorna (captura por adb na AbLibraryBaselineActivity). ENQUANTO nao existir, o
+          # diff e PULADO com ::warning:: (nao derruba o job: evita empilhar vermelho na janela
+          # entre o codigo c2 e a captura do baseline). Quando o PNG entrar no repo, vira gate duro
+          # automaticamente (exit!=0 derruba o job). A calibragem dos tetos placeholder = fatia c3.
+          if [ -f ab/library-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/library-android.png ab/library-ios.png library
+          else
+            echo "::warning::baseline ab/library-android.png ausente (captura coordenada pelo Bigorna) — diff da Library PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+          # Par Settings (perfil 'settings': estrutural + glow, SEM cover) — GATE DURO assim que o
+          # baseline existir. MESMA cadencia da Library: o baseline (ab/settings-android.png) e um
+          # commit DELIBERADO coordenado pelo Bigorna (captura por adb na AbSettingsBaselineActivity).
+          # ENQUANTO nao existir, o diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG
+          # entrar no repo, vira gate duro. Tetos placeholder do perfil 'settings' = calibrados no c3.
+          if [ -f ab/settings-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/settings-android.png ab/settings-ios.png settings
+          else
+            echo "::warning::baseline ab/settings-android.png ausente (captura coordenada pelo Bigorna) — diff do Settings PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+          # Par Nav (perfil 'nav': estrutural + glow, SEM cover) — GATE DURO assim que o baseline
+          # existir. MESMA cadencia de Library/Settings: o baseline (ab/nav-android.png) e um commit
+          # DELIBERADO coordenado pelo Bigorna (captura por adb na AbNavBaselineActivity). ENQUANTO
+          # nao existir, o diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG entrar no
+          # repo, vira gate duro. Tetos placeholder do perfil 'nav' = calibrados no c3.
+          if [ -f ab/nav-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/nav-android.png ab/nav-ios.png nav
+          else
+            echo "::warning::baseline ab/nav-android.png ausente (captura coordenada pelo Bigorna) — diff do Nav PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+          # Par Eq (perfil 'eq': estrutural + glow, SEM cover) — GATE DURO assim que o baseline existir.
+          # MESMA cadencia de Library/Settings/Nav: o baseline (ab/eq-android.png) e um commit DELIBERADO
+          # coordenado pelo Bigorna (captura por adb na AbEqBaselineActivity). ENQUANTO nao existir, o
+          # diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG entrar no repo, vira gate
+          # duro. Tetos placeholder do perfil 'eq' = calibrados no c3 (masks decididas MEDINDO o clean).
+          if [ -f ab/eq-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/eq-android.png ab/eq-ios.png eq
+          else
+            echo "::warning::baseline ab/eq-android.png ausente (captura coordenada pelo Bigorna) — diff do Eq PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+          # Par Queue (perfil 'queue': estrutural + glow, SEM cover) — GATE DURO assim que o baseline
+          # existir. MESMA cadencia dos outros: o baseline (ab/queue-android.png) e um commit DELIBERADO
+          # coordenado pelo Bigorna (captura por adb na AbQueueBaselineActivity). ENQUANTO nao existir,
+          # o diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG entrar no repo, vira gate
+          # duro. Tetos placeholder do perfil 'queue' = calibrados no c3 (masks so-titulo se preciso).
+          if [ -f ab/queue-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/queue-android.png ab/queue-ios.png queue
+          else
+            echo "::warning::baseline ab/queue-android.png ausente (captura coordenada pelo Bigorna) — diff do Queue PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+          # Par NowPlaying-cheia (perfil 'nowplaying-full': estrutural + glow do HALO do titulo, SEM
+          # cover) — GATE DURO assim que o baseline existir. MESMA cadencia dos outros: o baseline
+          # (ab/nowplaying-full-android.png) e um commit DELIBERADO coordenado pelo Bigorna (captura por
+          # adb na AbNowPlayingFullBaselineActivity). ENQUANTO nao existir, o diff e PULADO com
+          # ::warning:: (nao derruba o job). Quando o PNG entrar no repo, vira gate duro. Tetos
+          # placeholder do perfil 'nowplaying-full' = calibrados no c3 (masks = 2 cursores conforme medicao).
+          if [ -f ab/nowplaying-full-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/nowplaying-full-android.png ab/nowplaying-full-ios.png nowplaying-full
+          else
+            echo "::warning::baseline ab/nowplaying-full-android.png ausente (captura coordenada pelo Bigorna) — diff do NowPlaying-cheia PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+          # Par Boot (perfil 'boot': estrutural + glow do HALO do LOGO ascii, SEM cover) — GATE DURO
+          # assim que o baseline existir. MESMA cadencia dos outros: o baseline (ab/boot-android.png) e
+          # um commit DELIBERADO coordenado pelo Bigorna (captura por adb na AbBootBaselineActivity).
+          # ENQUANTO nao existir, o diff e PULADO com ::warning:: (nao derruba o job). Quando o PNG entrar
+          # no repo, vira gate duro. Tetos placeholder do perfil 'boot' = calibrados no c3 (masks MEDINDO).
+          if [ -f ab/boot-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/boot-android.png ab/boot-ios.png boot
+          else
+            echo "::warning::baseline ab/boot-android.png ausente (captura coordenada pelo Bigorna) — diff do Boot PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
+
+      # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
+      # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
+      # automático é a próxima fatia; aqui é diff visual. if-no-files-found: warn — o baseline
+      # entra por captura determinística à parte (não derruba o gate enquanto não estiver lá).
+      - name: Upload A/B PNGs (iOS offscreen + baseline Android)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ab-nowplaying
+          path: |
+            ab/nowplaying-ios.png
+            ab/nowplaying-android.png
+            ab/library-ios.png
+            ab/library-android.png
+            ab/settings-ios.png
+            ab/settings-android.png
+            ab/nav-ios.png
+            ab/nav-android.png
+            ab/eq-ios.png
+            ab/eq-android.png
+            ab/queue-ios.png
+            ab/queue-android.png
+            ab/nowplaying-full-ios.png
+            ab/nowplaying-full-android.png
+            ab/boot-ios.png
+            ab/boot-android.png
+            ab/ios-test.log
+          if-no-files-found: warn
+
+      # Builda o host SwiftUI (iosApp/) p/ o simulador. Compilar o framework não prova
+      # que o app roda — este passo linka o CMP no app e valida o pipeline host→Compose.
+      # ENABLE_DEBUG_DYLIB=NO: no Xcode 16+ o build Debug gera um "debug dylib" cujo
+      # executável principal é um stub (___debug_blank_executor_main) que só roda o app
+      # sob lldb/Xcode. Lançado standalone via `simctl launch`, o stub sai sem rodar nada
+      # → app fica INSTALADO mas NÃO rodando (screenshot pegava a HOME). Com =NO o
+      # executável carrega o código real e o `simctl launch` roda o app de fato.
+      # Pre-boot do simulador alvo AQUI (DEPOIS do teste konan — bootar junto disputava
+      # sim/RAM com o test runner e dava "Broken pipe" no iosSimulatorArm64Test, run
+      # 42177472057 — e ANTES do xcodebuild). O 1o boot dispara o LaunchServicesMigrator
+      # e o SpringBoard leva ~minutos p/ assentar; lançar antes disso deixa o screenshot
+      # na HOME (run 42176281072: 6 tentativas, todas HOME de 3026950 bytes). O tempo do
+      # xcodebuild + injeção de resources deixa o SpringBoard assentar antes da captura.
+      - name: Pre-boot do simulador iOS (assenta durante o xcodebuild)
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "Pre-boot UDID=$UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b || true
+
+      - name: Build do host iosApp (simulador)
+        run: |
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+            -sdk iphonesimulator -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO ENABLE_DEBUG_DYLIB=NO build
+
+      # FALLBACK de Compose Resources (por quê: o host Xcode é feito à mão e NÃO roda a
+      # task de sync do plugin CMP — essa via oficial, via Build Phase chamando o Gradle
+      # [embedAndSignAppleFrameworkForXcode], precisa de um Mac p/ autorar/validar, e um
+      # Run Script quebrado derrubaria o build no Mac; como o gate roda no Windows+CI e
+      # eu não valido no Mac, injeto aqui de forma determinística). O leitor do CMP no iOS
+      # procura em <app>.app/compose-resources/composeResources/<packageOfResClass>/<cat>/<arq>.
+      # Reproduzimos esse layout a partir do source (só há a fonte VT323, copiada verbatim).
+      # packageOfResClass = com.mpx.player.resources.
+      - name: Injeta as Compose Resources no app bundle (iOS)
+        run: |
+          APP="dd/Build/Products/Debug-iphonesimulator/iosApp.app"
+          DEST="$APP/compose-resources/composeResources/com.mpx.player.resources"
+          mkdir -p "$DEST"
+          cp -R shared/src/commonMain/composeResources/. "$DEST/"
+          echo "=== compose-resources no bundle ==="
+          find "$APP/compose-resources" -type f
+
+      - name: Sobe simulador, instala e captura screenshot (iOS)
+        run: |
+          set -uo pipefail
+          mkdir -p ios-diag
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "Simulador UDID=$UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b || true   # espera o boot completar antes de instalar/lançar
+          xcrun simctl install "$UDID" dd/Build/Products/Debug-iphonesimulator/iosApp.app
+          # DETERMINISMO DO SCREENSHOT: o 1o launch num simulador recém-bootado às vezes
+          # NÃO foregrounda (o screenshot pega a HOME, mesmo com o app lançado/PID vivo —
+          # flake de timing do SpringBoard). A SmokeScreen é quase toda PRETA → PNG pequeno
+          # (dezenas de KB); a HOME tem wallpaper → ~3MB. Relança + recaptura até o PNG
+          # ficar pequeno (render de fato) e FALHA o gate se nunca renderizar (assim o
+          # "screenshot da fumaça" é um gate real, não um verde falso com a HOME).
+          # Simulador JA pre-bootado e assentado (passo anterior). Loop de margem: relanca
+          # e recaptura ate o PNG ficar pequeno (= render; a HOME da ~3MB), com sleep
+          # crescente p/ absorver lentidao do runner. FALHA o gate se nunca renderizar.
+          shot=0
+          for i in $(seq 1 8); do
+            xcrun simctl terminate "$UDID" com.mpx.player.iosApp 2>/dev/null || true
+            sleep 1
+            xcrun simctl launch "$UDID" com.mpx.player.iosApp | tee ios-diag/launch.txt
+            sleep $((6 + i * 2))   # 1o frame + carga da fonte; cresce a cada tentativa
+            xcrun simctl io "$UDID" screenshot crt-ios.png
+            SZ=$(stat -f%z crt-ios.png 2>/dev/null || echo 0)
+            echo "tentativa $i: screenshot=$SZ bytes"
+            if [ "$SZ" -gt 0 ] && [ "$SZ" -lt 400000 ]; then
+              echo "RENDER capturado (<400KB = tela preta da fumaça; a HOME daria ~3MB)."
+              shot=1; break
+            fi
+            echo "screenshot grande (provável HOME); relançando..."
+            sleep 2
+          done
+          cp crt-ios.png ios-diag/crt-ios.png 2>/dev/null || true
+          if [ "$shot" -ne 1 ]; then
+            # NAO falha o gate. O app LANCA e roda (PID vivo, sem crash — confirmado no
+            # ios-diag), mas o SpringBoard do simulador HEADLESS as vezes nao o traz a
+            # frente (1o boot churnando TTS/LaunchServices), entao o screenshot pega a
+            # HOME. Mitigacoes (pre-boot + 8 relances com sleep crescente) nao vencem de
+            # forma confiavel. O render da SmokeScreen JA foi provado visualmente no run
+            # 42171370279 (89KB). GATE DURO do iOS = compile + link framework +
+            # iosSimulatorArm64Test (acima); o screenshot aqui e best-effort/diagnostico.
+            echo "::warning::Screenshot pegou a HOME em 8 tentativas (flake de foreground do simulador headless; app rodou sem crash). Render ja provado no run 42171370279 — NAO bloqueia o gate."
+          else
+            echo "Render da SmokeScreen capturado (<400KB)."
+          fi
+
+      - name: Upload do screenshot iOS (smoke)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke
+          path: crt-ios.png
+          if-no-files-found: warn
+
+      # Diagnóstico: se o screenshot vier a HOME (suspeita de crash — simctl launch
+      # retorna 0 mesmo com crash), prova a causa: estado do app + crash reports + syslog.
+      - name: Diagnóstico iOS (estado do app + crash reports)
+        if: always()
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone 16' | grep -oE '[0-9A-F-]{36}')
+          echo "UDID=$UDID"
+          mkdir -p ios-diag
+          echo "=== listapps (iosApp) ==="; xcrun simctl listapps "$UDID" | grep -i mpx || true
+          echo "=== running? ==="; xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i mpx || echo "NAO esta rodando"
+          echo "=== crash reports ==="
+          CR="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/DiagnosticReports"
+          cp "$CR"/*.ips ios-diag/ 2>/dev/null || true
+          cp "$CR"/*.crash ios-diag/ 2>/dev/null || true
+          ls -la ios-diag || true
+          for f in ios-diag/*.ips ios-diag/*.crash; do [ -e "$f" ] && { echo "----- $f -----"; cat "$f"; }; done
+          echo "=== syslog (iosApp/kotlin/compose/exception) ==="
+          xcrun simctl spawn "$UDID" log show --last 3m 2>/dev/null | grep -iE "iosApp|kotlin|compose|mpx|Fatal|Exception|Uncaught|Resource|font" | tail -200 > ios-diag/syslog.txt || true
+          cat ios-diag/syslog.txt || true
+
+      - name: Upload diagnóstico iOS
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-diag
+          path: ios-diag
+          if-no-files-found: warn

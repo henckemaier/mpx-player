@@ -215,6 +215,22 @@ consulta a release mais recente, compara a versão e **baixa + instala** com um 
 O processo completo (SemVer, changelog, passo a passo) está em
 **[RELEASING.md](RELEASING.md)**; o histórico de mudanças em **[CHANGELOG.md](CHANGELOG.md)**.
 
+### 🍎 iOS: não há `.apk` equivalente
+
+O porte iOS (KMP + Compose Multiplatform) está em andamento, mas **o iOS não tem um instalável
+pronto para baixar como o `.apk`**. Isso é uma limitação da plataforma, não do projeto:
+
+- Todo app iOS precisa de um `.ipa` **assinado** por uma **conta de desenvolvedor Apple** (US$ 99/ano)
+  e autorizado para aparelhos específicos — não existe "sideload" aberto como no Android.
+- **App Store / TestFlight estão fora** para o app completo: baixar do YouTube **viola as diretrizes**
+  da Apple (por isso o downloader é **Android-only**).
+
+Na prática, para rodar em um iPhone você precisa **compilar o projeto você mesmo no Xcode (macOS)**.
+As alternativas sem Mac (reassinar um `.ipa` com Sideloadly/AltStore e um Apple ID próprio) **expiram
+a cada 7 dias**. O CI de iOS (runner macOS) hoje **apenas compila e testa** — não gera `.ipa` nem publica.
+
+> **Resumo:** as releases do GitHub trazem o **`.apk` (Android)**. Para **iOS**, compile pelo Xcode.
+
 ---
 
 ## Créditos

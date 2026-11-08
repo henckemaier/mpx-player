@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -31,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,28 +41,28 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mpx.player.data.AndroidTechInfoReader
 import com.mpx.player.model.UserSettings
+import com.mpx.player.ui.AndroidLibraryViewModel
 import com.mpx.player.ui.EqViewModel
-import com.mpx.player.ui.LibraryViewModel
-import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.PlayerViewModel
-import com.mpx.player.ui.SettingsViewModel
+import com.mpx.player.ui.AndroidSettingsViewModel
 import com.mpx.player.ui.components.HeaderLabel
-import com.mpx.player.ui.components.MpxHeader
-import com.mpx.player.ui.components.MpxNav
-import com.mpx.player.ui.components.MpxNavRail
-import com.mpx.player.ui.components.Tab
+import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.components.scanlines
+import com.mpx.player.ui.MpxShell
+import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.mpxViewModel
+import com.mpx.player.ui.nav.Destination
+import com.mpx.player.ui.nav.NavState
+import com.mpx.player.ui.screens.AndroidLibraryScreen
 import com.mpx.player.ui.screens.BootScreen
 import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
-import com.mpx.player.ui.screens.LibraryScreen
-import com.mpx.player.ui.screens.NowPlayingActions
 import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen
-import com.mpx.player.ui.screens.SettingsScreen
+import com.mpx.player.ui.screens.AndroidSettingsScreen
 import com.mpx.player.ui.theme.LocalLandscape
 import com.mpx.player.ui.theme.Mpx
 import com.mpx.player.ui.theme.MpxTheme
@@ -78,16 +78,21 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        container.player.connect()
+        container.audioPlayer.connect()
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
-            MpxTheme(settings) { MpxRoot(container, settings) }
+            MpxTheme(settings) {
+                // Provê o loader de capa (Android: MediaStore + arte embutida) ao Cover comum.
+                CompositionLocalProvider(LocalCoverLoader provides container.covers) {
+                    MpxRoot(container, settings)
+                }
+            }
         }
     }
 
     override fun onStart() {
         super.onStart()
-        container.player.connect()
+        container.audioPlayer.connect()
     }
 }
 
@@ -96,7 +101,7 @@ private val AUDIO_PERMISSION =
     else Manifest.permission.READ_EXTERNAL_STORAGE
 
 @Composable
-private fun MpxRoot(container: AppContainer, settings: UserSettings) {
+private fun MpxRoot(container: AndroidAppContainer, settings: UserSettings) {
     val context = LocalContext.current
     val st = Mpx.style
     var granted by remember {
@@ -113,7 +118,9 @@ private fun MpxRoot(container: AppContainer, settings: UserSettings) {
     }
 
     var booted by rememberSaveable { mutableStateOf(false) }
-    var tab by rememberSaveable { mutableStateOf(Tab.PLAY) }
+    // Preserva o DESTINO selecionado em config-change (como o antigo `tab`). Salva a pilha inteira
+    // como ordinais; back-stack derivado é puro (:shared).
+    var nav by rememberSaveable(stateSaver = NavStateSaver) { mutableStateOf(NavState()) }
 
     Box(
         Modifier
@@ -141,14 +148,22 @@ private fun MpxRoot(container: AppContainer, settings: UserSettings) {
                     scanned = library.scanned,
                     fileCount = library.tracks.size,
                     eqPreset = settings.eq.preset,
+                    version = BuildConfig.VERSION_NAME,
                     onRequestPermission = { request.launch(AUDIO_PERMISSION) },
                     onEnter = { booted = true },
+                    // stepOverride/barOverride omitidos (null) → anima de verdade, byte-idêntico ao de antes.
                 )
             } else {
-                BackHandler(enabled = tab != Tab.PLAY) { tab = Tab.PLAY }
-                MainShell(tab, onTab = { tab = it }, libraryFiles = library.tracks.size, onReboot = {
-                    booted = false; tab = Tab.PLAY
-                })
+                // POLÍTICA A1 (idêntica a hoje): back só é tratado FORA de PLAY e volta DIRETO pra
+                // PLAY. Usa `current != PLAY` (não `canGoBack`): com reordena-vs-empilha a pilha
+                // pode ter tamanho>1 com PLAY no topo, e aí o back é do sistema (sai do app).
+                BackHandler(enabled = nav.current != Destination.PLAY) { nav = nav.popToRoot() }
+                MainShell(
+                    nav = nav,
+                    onSelect = { nav = nav.goTo(it) },
+                    libraryFiles = library.tracks.size,
+                    onReboot = { booted = false; nav = NavState() },
+                )
             }
         }
           }
@@ -156,47 +171,21 @@ private fun MpxRoot(container: AppContainer, settings: UserSettings) {
     }
 }
 
+/** Saver do back-stack: salva a pilha como ordinais; restaura reconstruindo os [Destination]. */
+private val NavStateSaver = listSaver<NavState, Int>(
+    save = { it.stack.map(Destination::ordinal) },
+    restore = { ords -> NavState(ords.map { Destination.entries[it] }) },
+)
+
 @Composable
-private fun MainShell(tab: Tab, onTab: (Tab) -> Unit, libraryFiles: Int, onReboot: () -> Unit) {
-    val playerVm = mpxViewModel { PlayerViewModel(it) }
+private fun MainShell(nav: NavState, onSelect: (Destination) -> Unit, libraryFiles: Int, onReboot: () -> Unit) {
+    val playerVm = mpxViewModel { PlayerViewModel(it, AndroidTechInfoReader(it.context)) }
     val player by playerVm.ui.collectAsStateWithLifecycle()
 
-    if (Mpx.landscape) {
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MpxNavRail(tab, onTab)
-            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MpxHeader { HeaderRight(tab, libraryFiles) }
-                MainContent(tab, onTab, player, playerVm, onReboot)
-            }
-        }
-    } else {
-        MpxHeader { HeaderRight(tab, libraryFiles) }
-        MpxNav(tab, onTab)
-        MainContent(tab, onTab, player, playerVm, onReboot)
-    }
-}
-
-@Composable
-private fun HeaderRight(tab: Tab, libraryFiles: Int) {
-    when (tab) {
-        Tab.PLAY -> StatusIndicators()
-        Tab.LIB -> HeaderLabel("${"%,d".format(libraryFiles).replace(',', '.')} FILES")
-        Tab.QUEUE -> HeaderLabel("QUEUE.BAT")
-        Tab.EQ -> HeaderLabel("EQ.EXE")
-        Tab.CFG -> HeaderLabel("CONFIG.SYS")
-    }
-}
-
-@Composable
-private fun MainContent(
-    tab: Tab,
-    onTab: (Tab) -> Unit,
-    player: PlayerUi,
-    playerVm: PlayerViewModel,
-    onReboot: () -> Unit,
-) {
-    when (tab) {
-        Tab.PLAY -> {
+    // Mapa de destinos: cada slot só compõe quando é o `current` (igual ao antigo `when`, recria o
+    // VM ao trocar de aba). As navegações cruzadas viram onSelect/goTo. Tudo Android fica aqui.
+    val destinations: Map<Destination, @Composable () -> Unit> = mapOf(
+        Destination.PLAY to {
             val tech by playerVm.tech.collectAsStateWithLifecycle()
             val lyrics by playerVm.lyrics.collectAsStateWithLifecycle()
             val volume by playerVm.volume.collectAsStateWithLifecycle()
@@ -213,27 +202,29 @@ private fun MainContent(
                     repeat = { playerVm.cycleRepeat() },
                     setVolume = playerVm::setVolume,
                     mute = playerVm::toggleMute,
-                    openLibrary = { onTab(Tab.LIB) },
+                    openLibrary = { onSelect(Destination.LIBRARY) },
                     toggleFavorite = playerVm::toggleFavorite,
                     addToPlaylist = playerVm::addCurrentToPlaylist,
                 ),
             )
-        }
-        Tab.LIB -> {
-            val vm = mpxViewModel { LibraryViewModel(it) }
+        },
+        Destination.LIBRARY to {
+            val vm = mpxViewModel { AndroidLibraryViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            LibraryScreen(ui, player, vm, onOpenPlayer = { onTab(Tab.PLAY) })
-        }
-        Tab.QUEUE -> QueueScreen(
-            player,
-            QueueActions(
-                pick = playerVm::playIndex,
-                shuffle = playerVm::shuffleQueue,
-                clear = playerVm::clearQueue,
-                play = { playerVm.play(); onTab(Tab.PLAY) },
-            ),
-        )
-        Tab.EQ -> {
+            AndroidLibraryScreen(ui, player, vm, onOpenPlayer = { onSelect(Destination.PLAY) })
+        },
+        Destination.QUEUE to {
+            QueueScreen(
+                player,
+                QueueActions(
+                    pick = playerVm::playIndex,
+                    shuffle = playerVm::shuffleQueue,
+                    clear = playerVm::clearQueue,
+                    play = { playerVm.play(); onSelect(Destination.PLAY) },
+                ),
+            )
+        },
+        Destination.EQ to {
             val vm = mpxViewModel { EqViewModel(it) }
             val eq by vm.eq.collectAsStateWithLifecycle()
             val sel by vm.selectedBand.collectAsStateWithLifecycle()
@@ -251,12 +242,32 @@ private fun MainContent(
                     save = vm::saveCustom,
                 ),
             )
-        }
-        Tab.CFG -> {
-            val vm = mpxViewModel { SettingsViewModel(it) }
+        },
+        Destination.CONFIG to {
+            val vm = mpxViewModel { AndroidSettingsViewModel(it) }
             val ui by vm.ui.collectAsStateWithLifecycle()
-            SettingsScreen(ui, vm, onReboot)
-        }
+            AndroidSettingsScreen(ui, vm, onReboot)
+        },
+    )
+
+    MpxShell(
+        nav = nav,
+        destinations = destinations,
+        onSelect = onSelect,
+        header = { HeaderRight(nav.current, libraryFiles) },
+        version = BuildConfig.VERSION_NAME,
+        enabled = { true },
+    )
+}
+
+@Composable
+private fun HeaderRight(dest: Destination, libraryFiles: Int) {
+    when (dest) {
+        Destination.PLAY -> StatusIndicators()
+        Destination.LIBRARY -> HeaderLabel("${"%,d".format(libraryFiles).replace(',', '.')} FILES")
+        Destination.QUEUE -> HeaderLabel("QUEUE.BAT")
+        Destination.EQ -> HeaderLabel("EQ.EXE")
+        Destination.CONFIG -> HeaderLabel("CONFIG.SYS")
     }
 }
 

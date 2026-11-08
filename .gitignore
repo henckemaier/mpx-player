@@ -10,6 +10,7 @@
 .DS_Store
 /build/
 /app/build/
+/shared/build/
 /captures/
 .externalNativeBuild/
 .cxx/
@@ -22,3 +23,6 @@
 # Testes (não versionados — pedido do usuário)
 /app/src/test/
 /app/src/androidTest/
+
+# Estado local do Maestri (roles geradas pelo CLI; o guia fica em docs/maestri-team.md)
+/.maestri/

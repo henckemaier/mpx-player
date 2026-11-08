@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SÓ-DEBUG: declara os harnesses one-off dos baselines Android do A/B visual (P7).
+     AbBaselineActivity = NowPlaying-painel (393x420); AbLibraryBaselineActivity = Library (393x600);
+     AbSettingsBaselineActivity = Settings (393x760); AbNavBaselineActivity = chrome de nav (393x200);
+     AbEqBaselineActivity = Equalizer (393x720); AbQueueBaselineActivity = Queue (393x720);
+     AbNowPlayingFullBaselineActivity = NowPlaying-cheia (393x800); AbBootBaselineActivity = Boot
+     frame terminal (393x800). Merge só no build debug; não vão p/ release. exported=true p/ o
+     `adb shell am start` externo conseguir lançá-las. Sem intent-filter LAUNCHER (não aparecem na
+     gaveta de apps; são lançadas explicitamente por componente). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.mpx.player.debug.AbBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbLibraryBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbSettingsBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbNavBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbEqBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbQueueBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbNowPlayingFullBaselineActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.mpx.player.debug.AbBootBaselineActivity"
+            android:exported="true" />
+    </application>
+</manifest>
