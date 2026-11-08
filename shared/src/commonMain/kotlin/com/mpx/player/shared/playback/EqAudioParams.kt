@@ -28,11 +28,12 @@ data class EqAudioParams(
  * - [EqSettings.preamp]: vira [globalGainDb] = `preampToDb(preamp)` (−6..+6 dB), análogo
  *   ao `setInputGainAllChannelsTo` do Android (= `AVAudioUnitEQ.globalGain`).
  *
- * DEFERIDO (device-gated, NÃO feito aqui): aplicar estes params num `AVAudioUnitEQ` REAL
- * exige reconstruir o pipeline de áudio (AVAudioEngine + AVAudioPlayerNode) — o
- * [IosAudioPlayer] atual usa `AVQueuePlayer`, que não tem ponto de inserção de EQ. Esta
- * fatia é SÓ o mapeamento puro; nada toca o player. O long-pole do EQ-audível continua
- * diferido até haver device p/ provar que toca.
+ * CONSUMIDO (SUB-4, caminho engine): o `IosEngineAudioPlayer` (backend `AVAudioEngine`, atrás do
+ * flag `USE_ENGINE_BACKEND`=OFF) insere um `AVAudioUnitEQ` (10 bandas) entre o `playerNode` e o
+ * `mainMixer` e aplica estes params (`applyEqParams`), observando `settings.eq`. O `IosAudioPlayer`
+ * de PRODUÇÃO segue no `AVQueuePlayer` (sem ponto de inserção de EQ), INTOCADO. O CI prova
+ * COMPILE+LINK (o `AVAudioUnitEQ` no grafo) + este MAPEAMENTO (testado em `EqAudioParamsTest`); o
+ * EQ AUDÍVEL/timbre/largura continua **device-gated** (sem Mac/iPhone p/ provar o som).
  *
  * GAP de fidelidade do iOS (decisão (i)): cobre SÓ o EQ de 10 bandas + preamp — o que o
  * `AVAudioUnitEQ` reproduz fielmente. [EqSettings.surround] (Android = `Virtualizer`) e

@@ -30,9 +30,10 @@ private const val USE_ENGINE_BACKEND = false
  *  - [settings]/[playlists] → `NSUserDefaults`;
  *  - [library] → MPMediaQuery (7.3);
  *  - [lyrics] → busca online (LyricsApi);
- *  - [audioPlayer] → [USE_ENGINE_BACKEND] ? `IosEngineAudioPlayer` (AVAudioEngine, experimental,
- *    OFF) : `createAudioPlayer(PlatformContext())` (AVFoundation/`AVQueuePlayer`, padrão; o
- *    `connect()` ativa a `AVAudioSession` .playback — não mexemos nisso aqui).
+ *  - [audioPlayer] → [USE_ENGINE_BACKEND] ? `IosEngineAudioPlayer(settings.eq)` (AVAudioEngine +
+ *    AVAudioUnitEQ observando `settings.eq`, experimental, OFF) : `createAudioPlayer(PlatformContext())`
+ *    (AVFoundation/`AVQueuePlayer`, padrão; o `connect()` ativa a `AVAudioSession` .playback — não
+ *    mexemos nisso aqui). `settings` é inicializado ANTES → disponível p/ a injeção do EQ.
  */
 class IosAppContainer : AppContainer {
     override val settings: SettingsRepository = IosSettingsRepository()
@@ -40,7 +41,7 @@ class IosAppContainer : AppContainer {
     override val lyrics: LyricsRepository = IosLyricsRepository()
     override val playlists: PlaylistRepository = IosPlaylistRepository()
     override val audioPlayer: AudioPlayer =
-        if (USE_ENGINE_BACKEND) IosEngineAudioPlayer() else createAudioPlayer(PlatformContext())
+        if (USE_ENGINE_BACKEND) IosEngineAudioPlayer(settings.eq) else createAudioPlayer(PlatformContext())
 }
 
 /**

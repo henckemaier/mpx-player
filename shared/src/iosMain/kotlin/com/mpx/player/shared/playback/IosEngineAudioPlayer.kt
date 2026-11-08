@@ -1,16 +1,29 @@
 package com.mpx.player.shared.playback
 
+import com.mpx.player.model.EqSettings
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.convert
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioFile
 import platform.AVFAudio.AVAudioPlayerNode
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
+import platform.AVFAudio.AVAudioUnitEQ
+import platform.AVFAudio.AVAudioUnitEQFilterParameters
+import platform.AVFAudio.AVAudioUnitEQFilterTypeParametric
 import platform.AVFAudio.sampleRate
 import platform.AVFAudio.setActive
 import platform.AVFAudio.startAndReturnError
@@ -21,15 +34,21 @@ import platform.darwin.dispatch_get_main_queue
 // NOTA K/N: os membros do grafo AVAudioEngine/AVAudioPlayerNode/AVAudioFile são MEMBROS DIRETOS
 // das @interface (framework AVFAudio) — chamam-se na instância SEM import (attachNode/connect/
 // prepare/play/pause/scheduleFile/scheduleSegment/volume/mainMixerNode/lastRenderTime/
-// playerTimeForNodeTime/length/processingFormat). Diferente de AVPlayer.volume/setVolume
-// (AVFoundation), que são de CATEGORIA → extensions e PRECISAM de import (ver kn-avfoundation-interop).
+// playerTimeForNodeTime/length/processingFormat). Idem SUB-4: AVAudioUnitEQ/AVAudioUnitEQFilterParameters
+// são CLASSES (importa o nome), mas seus membros (bands/globalGain/bypass/frequency/gain/bandwidth/
+// filterType) são DIRETOS (sem import); já a constante NS_ENUM AVAudioUnitEQFilterTypeParametric é
+// símbolo TOP-LEVEL → IMPORTA a constante (não qualifica pelo tipo). Diferente de AVPlayer.volume/
+// setVolume (AVFoundation), de CATEGORIA → extensions que PRECISAM de import (ver kn-avfoundation-interop).
 
 /**
  * Backend iOS **ALTERNATIVO** sobre `AVAudioEngine` + `AVAudioPlayerNode`, implementando o
  * mesmo contrato [AudioPlayer]. É selecionado por um flag de LAUNCH-TIME (`USE_ENGINE_BACKEND`
  * no `IosAppContainer`), que nasce **OFF**: em produção o player é o [IosAudioPlayer]
- * (`AVQueuePlayer`), INTOCADO. Este backend abre o caminho do grafo de áudio (pré-requisito do
- * EQ-audível com `AVAudioUnitEQ`).
+ * (`AVQueuePlayer`), INTOCADO. Este backend abre o caminho do grafo de áudio e, na SUB-4, landa o
+ * **EQ-audível**: um `AVAudioUnitEQ` (10 bandas) é inserido entre o `playerNode` e o `mainMixer` e
+ * alimentado por [eqSource] (observação de `settings.eq`, injetada só com o flag ON) via
+ * [applyEqParams]. O mapeamento `EqSettings`→[EqAudioParams] é puro/testado; o timbre/largura
+ * AUDÍVEL é device-gated (ver [applyEqParams]/[EQ_BANDWIDTH_OCTAVES]).
  *
  * ## Estratégia de fila (SUB-2, opção A) — GAPLESS num único nó
  * O `AVAudioPlayerNode` NÃO tem fila nativa (ao contrário do `AVQueuePlayer`), mas aceita vários
@@ -63,7 +82,11 @@ import platform.darwin.dispatch_get_main_queue
  * cadeia (stop + solta refs) e o token invalida completions pendentes.
  */
 @OptIn(ExperimentalForeignApi::class)
-class IosEngineAudioPlayer : AudioPlayer {
+class IosEngineAudioPlayer(
+    // Fonte do EQ ao vivo (SUB-4). OPCIONAL/nulável → reversível: null = sem observação (o grafo
+    // monta com o eqNode em FLAT/bypass default). Único call-site = IosAppContainer (flag ON).
+    private val eqSource: Flow<EqSettings>? = null,
+) : AudioPlayer {
 
     private val _state = MutableStateFlow(PlaybackState())
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -76,6 +99,8 @@ class IosEngineAudioPlayer : AudioPlayer {
 
     private var engine: AVAudioEngine? = null
     private var playerNode: AVAudioPlayerNode? = null
+    // EQ (SUB-4): nó inserido entre playerNode e mainMixer; alimentado por eqSource (settings.eq).
+    private var eqNode: AVAudioUnitEQ? = null
 
     // Modelo de fila (fonte da verdade): [items] na ordem original; [order] = ordem de reprodução
     // (identidade/permutação); [pos] aponta na [order]. Mesma convenção do [IosAudioPlayer].
@@ -98,6 +123,11 @@ class IosEngineAudioPlayer : AudioPlayer {
     private var pendingQueue: Triple<List<PlaybackItem>, Int, String>? = null
     private var pendingPlay: Boolean = false
 
+    // EQ corrente cacheado: se uma emissão chegar antes de o eqNode existir, guarda aqui e o
+    // connect() reaplica ao montar (análogo ao node.volume). Scope da observação de settings.eq.
+    private var lastEqParams: EqAudioParams? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     /** Um item agendado no nó: a posição na [order] + o arquivo e seus metadados (p/ posição/duração). */
     private class ScheduledItem(
         val orderPos: Int,
@@ -113,16 +143,33 @@ class IosEngineAudioPlayer : AudioPlayer {
         val e = AVAudioEngine()
         val node = AVAudioPlayerNode()
         e.attachNode(node)
-        // format=null: usa o formato de saída do nó. Casar com o processingFormat do arquivo é
-        // refinamento de áudio (device-gated) — aqui o foco é montar/linkar o grafo.
-        e.connect(node, to = e.mainMixerNode, format = null)
+        // SUB-4: insere o AVAudioUnitEQ (10 bandas) ENTRE o playerNode e o mainMixer → ponto de
+        // inserção do EQ-audível (playerNode -> eq -> mainMixer). format=null: usa o formato de saída
+        // do nó (casar com o processingFormat do arquivo é refinamento device-gated; aqui o foco é
+        // montar/linkar o grafo).
+        val eq = AVAudioUnitEQ(numberOfBands = 10.convert())
+        e.attachNode(eq)
+        e.connect(node, to = eq, format = null)
+        e.connect(eq, to = e.mainMixerNode, format = null)
         e.prepare()
         val started = runCatching { e.startAndReturnError(null) }.getOrDefault(false)
         if (!started) println("IosEngineAudioPlayer: AVAudioEngine não iniciou; seguindo mesmo assim")
 
         engine = e
         playerNode = node
+        eqNode = eq
         node.volume = _volume.value.level / 100f // reaplica alvo pré-conexão (no-op no default 100)
+        // Aplica o EQ corrente ao montar (análogo ao node.volume reaplicado): params cacheados antes
+        // do grafo, ou FLAT default se ainda não houve emissão. A observação abaixo mantém ao vivo.
+        lastEqParams?.let { applyEqParams(it) }
+        // Observa settings.eq (injetado só com o flag ON) → reaplica no eqNode (espelha o Android:
+        // EQ fora do contrato, dirigido por flow). O guard `engine != null` no topo garante que a
+        // coleta inicia UMA vez; a 1ª emissão aplica o EQ atual.
+        eqSource?.let { src ->
+            scope.launch {
+                src.map { it.toAudioParams() }.distinctUntilChanged().collect { applyEqParams(it) }
+            }
+        }
         _state.update { it.copy(connected = true) }
 
         pendingQueue?.let { (its, si, sl) ->
@@ -132,6 +179,34 @@ class IosEngineAudioPlayer : AudioPlayer {
         if (pendingPlay) {
             pendingPlay = false
             play()
+        }
+    }
+
+    /**
+     * EFEITO device-gated (SÓ este método toca o `AVAudioUnitEQ`). Reaplica TODO o [EqAudioParams] no
+     * [eqNode]: `bypass` (enabled=false → bypass, herdado de `AVAudioUnitEffect`), `globalGain` (o
+     * preamp) e as 10 bandas paramétricas (`filterType`/`frequency`/`bandwidth`/`gain`). Update ao
+     * vivo = re-chamar (re-seta tudo, SEM reconstruir o grafo). Antes de o grafo existir, só CACHEIA
+     * em [lastEqParams] (o `connect()` aplica ao montar).
+     *
+     * O CI prova COMPILE+LINK (os membros de `AVAudioUnitEQ`/`AVAudioUnitEQFilterParameters` e a
+     * constante `AVAudioUnitEQFilterTypeParametric` resolvem no K/N) + o MAPEAMENTO (já testado em
+     * `EqAudioParamsTest`). O timbre/largura AUDÍVEL e o update-ao-vivo-audível são device-gated (sem
+     * Mac/iPhone) — ver [EQ_BANDWIDTH_OCTAVES]. Flag OFF → nem instancia.
+     */
+    private fun applyEqParams(p: EqAudioParams) {
+        val eq = eqNode ?: run { lastEqParams = p; return }
+        lastEqParams = p
+        eq.bypass = !p.enabled
+        eq.globalGain = p.globalGainDb
+        p.bands.forEachIndexed { i, b ->
+            (eq.bands.getOrNull(i) as? AVAudioUnitEQFilterParameters)?.let { fp ->
+                fp.filterType = AVAudioUnitEQFilterTypeParametric
+                fp.frequency = b.freqHz
+                fp.bandwidth = EQ_BANDWIDTH_OCTAVES
+                fp.gain = b.gainDb
+                fp.bypass = false
+            }
         }
     }
 
@@ -388,10 +463,12 @@ class IosEngineAudioPlayer : AudioPlayer {
     }
 
     override fun release() {
+        scope.cancel() // encerra a observação de settings.eq (quebra o retain via closure)
         playerNode?.stop()
         engine?.stop()
         playerNode = null
         engine = null
+        eqNode = null
         pipeline.clear()
         items = emptyList()
         order = emptyList()
@@ -439,6 +516,14 @@ class IosEngineAudioPlayer : AudioPlayer {
 // --- Lógica pura de frame/tempo/fila/advance (sem AVFoundation) — testável no iosSimulatorArm64Test ---
 // (reusa volumeLevel/applyMuteToggle/secondsToMs/endAdvancePos/manualNextPos/buildPlayOrder/
 //  buildShuffleAll/queueIdsInPlayOrder de IosAudioPlayer.kt — mesmo módulo/pacote.)
+
+/**
+ * Largura de banda (em OITAVAS) dos filtros paramétricos do `AVAudioUnitEQ` (SUB-4). ~1 oitava: as
+ * 10 freqs [32..16000] são ~oitava-espaçadas. **device-gated**: o Android usa `cutoff = freq*√2` num
+ * modelo `DynamicsProcessing` DIFERENTE → a largura exata NÃO mapeia 1:1 pro paramétrico do iOS.
+ * Ganho/freq/`globalGain` mapeiam direto; a LARGURA é knob a CALIBRAR no device (sem Mac/iPhone aqui).
+ */
+internal const val EQ_BANDWIDTH_OCTAVES: Float = 1.0f
 
 /** Segundos → frames (floor). Não-positivos ou sampleRate inválida → 0. */
 internal fun secondsToFrames(sec: Double, sampleRate: Double): Long =
