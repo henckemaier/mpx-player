@@ -12,6 +12,8 @@ import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.PlaylistRepository
 import com.mpx.player.data.RemoteLibrarySource
 import com.mpx.player.data.SettingsRepository
+import com.mpx.player.data.SyncIndex
+import com.mpx.player.data.SyncManager
 import com.mpx.player.data.UpdateRepository
 import com.mpx.player.playback.PlayerController
 
@@ -21,7 +23,9 @@ class AppContainer(val context: Context) {
     val overrides = OverrideRepository(context)
     val remote = RemoteLibrarySource(settings)
     val discovery = DesktopDiscovery(context)
-    val library = LibraryRepository(context, overrides, remote)
+    val syncIndex = SyncIndex(context)
+    val library = LibraryRepository(context, overrides, remote, syncIndex)
+    val syncManager = SyncManager(context, library, syncIndex)
     val lyrics = LyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)
     val playlists = PlaylistRepository(context)

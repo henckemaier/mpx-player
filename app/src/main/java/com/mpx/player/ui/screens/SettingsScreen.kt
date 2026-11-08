@@ -55,6 +55,7 @@ import com.mpx.player.data.DownloadState
 import com.mpx.player.data.DownloadStatus
 import com.mpx.player.data.RemoteState
 import com.mpx.player.data.RemoteStatus
+import com.mpx.player.data.SyncManager
 import com.mpx.player.data.UpdateState
 import com.mpx.player.data.UpdateStatus
 import com.mpx.player.model.UserSettings
@@ -266,6 +267,12 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
         if (open == 7) SectionBody {
             val discovered by vm.discovered.collectAsStateWithLifecycle()
             DesktopBody(desktop, discovered, onConnect = vm::connectDesktop, onDisconnect = vm::disconnectDesktop)
+            val sync by vm.sync.collectAsStateWithLifecycle()
+            val pending by vm.syncPending.collectAsStateWithLifecycle()
+            val offlineN by vm.offlineCount.collectAsStateWithLifecycle()
+            if (desktop.status == RemoteStatus.CONNECTED || offlineN > 0) {
+                DesktopSyncRow(sync, pending, offlineN, onSync = vm::syncFavorites, onRemove = vm::removeOffline, onClear = vm::clearSyncResult)
+            }
         }
 
         Spacer(Modifier.height(4.dp))
@@ -341,6 +348,42 @@ private fun DesktopBody(
             ) { if (host.isNotBlank() && token.isNotBlank() && !connecting) onConnect(host.trim(), token.trim()) }
         }
         Txt("TOQUE UM AGENTE DA LISTA, LEIA O QR, OU DIGITE IP:PORTA.", size = 10.sp, color = c.dim, maxLines = 2)
+    }
+}
+
+/**
+ * Sync OFFLINE das favoritas: botão SINCRONIZAR FAVORITAS (N) -> progresso M/N -> OFFLINE OK; e
+ * REMOVER OFFLINE (un-sync geral). A faixa sincronizada vira LOCAL e toca sem rede; a marca
+ * [OFFLINE] vs [STREAM] sai na biblioteca. Reusa os primitivos CRT (ZERO novo).
+ */
+@Composable
+private fun DesktopSyncRow(
+    st: SyncManager.SyncState,
+    pending: Int,
+    offlineN: Int,
+    onSync: () -> Unit,
+    onRemove: () -> Unit,
+    onClear: () -> Unit,
+) {
+    val c = Mpx.colors
+    DashedDivider()
+    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Txt("SYNC OFFLINE DAS FAVORITAS (BAIXA P/ O APARELHO, TOCA SEM REDE).", size = 10.sp, color = c.dim, maxLines = 2)
+        if (st.running) {
+            val lit = if (st.total > 0) (st.done * 20 / st.total).coerceIn(0, 20) else 0
+            SegmentBar(20, lit, height = 20.dp)
+            Txt("SINCRONIZANDO ${st.done}/${st.total} ...", size = 12.sp)
+        } else {
+            TextButton(
+                "> SINCRONIZAR FAVORITAS ($pending)",
+                Modifier.fillMaxWidth().height(44.dp),
+                filled = pending > 0,
+            ) { if (pending > 0) onSync() }
+            st.result?.let { ResultRow(it, onClear) }
+        }
+        if (offlineN > 0) {
+            TextButton("> REMOVER OFFLINE ($offlineN)", Modifier.fillMaxWidth().height(44.dp), border = c.accent, onClick = onRemove)
+        }
     }
 }
 
