@@ -26,7 +26,6 @@ import com.mpx.player.ui.EqViewModel
 import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.MpxShell
 import com.mpx.player.ui.NowPlayingActions
-import com.mpx.player.ui.NowPlayingPanel
 import com.mpx.player.ui.PlayerViewModel
 import com.mpx.player.ui.SettingsViewModel
 import com.mpx.player.ui.components.HeaderLabel
@@ -38,6 +37,7 @@ import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
 import com.mpx.player.ui.screens.LibraryActions
 import com.mpx.player.ui.screens.LibraryScreen
+import com.mpx.player.ui.screens.NowPlayingScreen
 import com.mpx.player.ui.screens.QueueActions
 import com.mpx.player.ui.screens.QueueScreen
 import com.mpx.player.ui.screens.SettingsActions
@@ -54,24 +54,26 @@ import platform.UIKit.UIViewController
  * Fatia NAV (P7): o host troca o antigo seletor-de-raiz MÍNIMO (2 botões Library<->Settings da
  * fatia settings) pelo [MpxShell] COMUM — a MESMA máquina de navegação do `:app` (back-stack puro
  * [NavState] + chrome [com.mpx.player.ui.components.MpxNav]/[com.mpx.player.ui.components.MpxHeader]).
- * O mapa de destinos no iOS tem SÓ PLAY/LIBRARY/CONFIG (as telas já portadas); QUEUE/EQ ficam de
- * fora e DESABILITADOS (`enabled`) → aparecem APAGADOS e não-tapáveis na barra (sem aba morta). O
- * back do iOS é um BOTÃO "< BACK" no cabeçalho (NÃO há BackHandler no iOS) visível quando
- * [NavState.canGoBack] → `nav.pop()` (política pop PLENO; swipe-back nativo = follow-up).
+ * O mapa de destinos no iOS tem as 5 telas portadas (PLAY/LIBRARY/QUEUE/EQ/CONFIG); só o Boot
+ * (fatia 4) fica fora → `enabled` libera tudo (sem aba morta). O back do iOS é um BOTÃO "< BACK"
+ * no cabeçalho (NÃO há BackHandler no iOS) visível quando [NavState.canGoBack] → `nav.pop()`
+ * (política pop PLENO; swipe-back nativo = follow-up).
  *
  * O [SettingsViewModel] comum persiste em NSUserDefaults (toggles de tema/cor/fonte aparecem AO
  * VIVO porque o [MpxTheme] é dirigido pelo `settings` REAL do VM). O cabeçalho usa um [HeaderLabel]
  * simples (o nome do destino) — Battery/FILES são Android-only. `version` fixa "1.0" (NÃO
  * BuildConfig → determinístico).
  *
- * Slot PLAY = [NowPlayingPanel] (o MESMO bloco do gate A/B) sobre o [PlayerViewModel] já ligado;
- * controles plenos (volume/favorito/console) = fatia futura (NowPlayingScreen-cheia). Slot LIBRARY
+ * Slot PLAY = [NowPlayingScreen] CHEIA (cover/meta/título/progresso/transporte + VolumeRow +
+ * Console CMD.LOG/LYRICS + PlaylistPicker + Spectrum) sobre o [PlayerViewModel] já ligado — o
+ * painel do gate A/B ([NowPlayingPanel]) reusa os MESMOS sub-composables (NpParts). Slot LIBRARY
  * = [LibraryScreen] (browse real). Slot CONFIG = [SettingsScreen] com slots Android = null.
  *
- * ESPERADO no simulador: nav entre PLAY/LIBRARY/CONFIG funciona; QUEUE/EQ apagados; a biblioteca
- * iOS é vazia (MPMediaQuery sem device) → contadores 0. Conteúdo real só no iPhone. Registro, não
- * falha. O teste A/B offscreen ([NowPlayingPanelRenderTest]/[NavShellRenderTest]) é INDEPENDENTE do
- * host (renderiza `sampleUi`/dummy) e segue intacto.
+ * ESPERADO no simulador: nav entre as 5 telas funciona; a biblioteca/fila iOS são vazias
+ * (MPMediaQuery sem device) → contadores 0; a VolumeRow mostra o volume do sistema (read-only,
+ * arrastar é no-op até a fatia de áudio). Conteúdo real só no iPhone. Registro, não falha. O teste
+ * A/B offscreen ([NowPlayingPanelRenderTest]/[NavShellRenderTest]) é INDEPENDENTE do host (renderiza
+ * `sampleUi`/dummy) e segue intacto.
  *
  * Mora em iosMain → só compila em host macOS; no Windows o source set é ignorado.
  */
@@ -101,10 +103,15 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val settingsUi by settingsViewModel.ui.collectAsState()
     val eq by eqViewModel.eq.collectAsState()
     val eqSel by eqViewModel.selectedBand.collectAsState()
+    // Fontes extras da NowPlaying-cheia (o painel não usava): letras, volume (AVAudioSession.outputVolume
+    // read-only no iOS), favorito e playlists. Todas já expostas pelo PlayerViewModel comum.
+    val lyrics by playerViewModel.lyrics.collectAsState()
+    val volume by playerViewModel.volume.collectAsState()
+    val favorite by playerViewModel.favorite.collectAsState()
+    val playlists by playerViewModel.playlists.collectAsState()
     // VMs singletons estáveis → as ações (method refs) são montadas uma vez, não a cada recomposição.
     val libActions = remember { iosLibActions(libraryViewModel) }
     val setActions = remember { iosSettingsActions(settingsViewModel) }
-    val playerActions = remember { iosPlayerActions(playerViewModel) }
     val eqActions = remember { iosEqActions(eqViewModel) }
     // Back-stack puro ([NavState]), igual ao :app (lá é rememberSaveable; no iOS não há recriação de
     // Activity, remember basta). onSelect = goTo (reordena-sem-dup).
@@ -115,6 +122,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     // esse setter vivo sem stale-capture; os outros actions são method refs estáveis (ok em remember).
     val onSelect: (Destination) -> Unit = { nav = nav.goTo(it) }
     val queueActions = iosQueueActions(playerViewModel, onSelect)
+    // playerActions também toca o nav (openLibrary → LIBRARY, usado pelo estado vazio do Console):
+    // build NA composição (sem remember), mesmo padrão do queueActions — carrega o setter vivo do
+    // nav sem stale-capture. Os demais callbacks são method refs estáveis do VM.
+    val playerActions = iosPlayerActions(playerViewModel, onSelect)
     // MpxTheme dirigido pelo `settings` REAL do VM: os toggles de tema/cor/fonte da tela CONFIG
     // recolorem a UI inteira ao vivo (não um UserSettings() fixo).
     MpxTheme(settingsUi.settings) {
@@ -131,8 +142,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 MpxShell(
                     nav = nav,
                     destinations = mapOf(
-                        // Slot PLAY: painel comum (display + transporte trivial) sobre o VM ligado.
-                        Destination.PLAY to { NowPlayingPanel(playerUi, playerActions, tech) },
+                        // Slot PLAY: NowPlaying-CHEIA comum (cover/meta/título/progresso/transporte +
+                        // VolumeRow + Console CMD.LOG/LYRICS + PlaylistPicker + Spectrum) sobre o VM
+                        // ligado. Volume read-only no simulador (ver iosPlayerActions / TODO áudio).
+                        Destination.PLAY to { NowPlayingScreen(playerUi, tech, lyrics, volume, favorite, playlists, playerActions) },
                         Destination.LIBRARY to { LibraryScreen(libUi, playerUi, libActions) },
                         // Slots Android = null (BAIXAR/IMPORTAR/UPDATE/SAÍDA somem); onReboot/
                         // onCheckUpdate = null (linha de botões some). Sem botão morto no iOS.
@@ -159,8 +172,9 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         }
                     },
                     version = "1.0",
-                    // Só NowPlaying-cheia/Boot restam p/ as fatias 3/4; QUEUE entrou.
-                    enabled = { it == Destination.PLAY || it == Destination.LIBRARY || it == Destination.CONFIG || it == Destination.EQ || it == Destination.QUEUE },
+                    // Todas as 5 telas portadas (PLAY-cheia entrou); só o Boot (fatia 4) fica fora do
+                    // mapa. Como não há destino BOOT na barra, enabled pode liberar tudo.
+                    enabled = { true },
                 )
             }
         }
@@ -241,22 +255,25 @@ private fun iosQueueActions(vm: PlayerViewModel, onGoTo: (Destination) -> Unit):
 )
 
 /**
- * [NowPlayingActions] do host iOS p/ o slot PLAY ([NowPlayingPanel]). O painel usa só transporte +
- * seek (toggle/next/previous/seek/shuffle/repeat); volume/favorito/playlist ficam fora do painel
- * (Console/VolumeRow = fatia futura NowPlayingScreen-cheia), mas são ligados ao VM mesmo assim
- * (inócuos se não renderizados). `openLibrary` é no-op: a navegação entre abas agora é a barra
- * MpxNav (o botão interno do painel ficaria redundante).
+ * [NowPlayingActions] do host iOS p/ o slot PLAY ([NowPlayingScreen] cheia): transporte + seek +
+ * favorito + addToPlaylist delegados ao [PlayerViewModel]. `openLibrary` (toque no estado vazio do
+ * Console) NAVEGA p/ LIBRARY via [onGoTo] — o MESMO setter vivo do nav (não um NavState capturado);
+ * por isso o builder roda NA composição (sem remember), igual ao queueActions.
+ *
+ * TODO(audio-slice): volume real no iOS. Hoje `AVAudioSession.outputVolume` é READ-ONLY e o
+ * `IosAudioPlayer.setVolume`/`toggleMute` são NO-OP documentados — a VolumeRow mostra o volume do
+ * sistema (read-only) e arrastá-la NÃO muda o áudio. A fatia de áudio futura liga isto de verdade.
  */
-private fun iosPlayerActions(vm: PlayerViewModel): NowPlayingActions = NowPlayingActions(
+private fun iosPlayerActions(vm: PlayerViewModel, onGoTo: (Destination) -> Unit): NowPlayingActions = NowPlayingActions(
     toggle = vm::toggle,
     next = vm::next,
     previous = vm::previous,
     seek = vm::seek,
     shuffle = vm::toggleShuffle,
     repeat = vm::cycleRepeat,
-    setVolume = vm::setVolume,
-    mute = vm::toggleMute,
-    openLibrary = {},
+    setVolume = vm::setVolume,   // TODO(audio-slice): no-op no iOS por ora (volume do sistema é read-only)
+    mute = vm::toggleMute,       // TODO(audio-slice): idem
+    openLibrary = { onGoTo(Destination.LIBRARY) },
     toggleFavorite = vm::toggleFavorite,
     addToPlaylist = vm::addCurrentToPlaylist,
 )

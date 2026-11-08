@@ -1,10 +1,8 @@
 package com.mpx.player.ui.screens
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.Orientation
@@ -30,7 +28,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,8 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
@@ -53,29 +48,33 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mpx.player.model.LyricLine
 import com.mpx.player.model.Playlist
-import com.mpx.player.shared.playback.RepeatMode
 import com.mpx.player.shared.playback.VolumeState
 import com.mpx.player.ui.NowPlayingActions
 import com.mpx.player.ui.PlayerUi
 import com.mpx.player.ui.TechInfo
-import com.mpx.player.ui.components.Cover
 import com.mpx.player.ui.components.IconButton
 import com.mpx.player.ui.components.InvertedBar
 import com.mpx.player.ui.components.MpxIcons
-import com.mpx.player.ui.components.SegmentBar
+import com.mpx.player.ui.components.NpCoverMeta
+import com.mpx.player.ui.components.NpProgress
+import com.mpx.player.ui.components.NpTitle
+import com.mpx.player.ui.components.NpTransport
+import com.mpx.player.ui.components.Spectrum
 import com.mpx.player.ui.components.TextButton
 import com.mpx.player.ui.components.Txt
 import com.mpx.player.ui.components.blinkingCursor
 import com.mpx.player.ui.components.formatTime
 import com.mpx.player.ui.components.frame
 import com.mpx.player.ui.components.tap
+import com.mpx.player.ui.components.trkLabel
 import com.mpx.player.ui.theme.Mpx
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 // NowPlayingActions foi movido para :shared/commonMain (com.mpx.player.ui.NowPlayingActions)
-// na fatia fina de UI (P7); importado acima.
+// na fatia fina de UI (P7); importado acima. Os sub-composables comuns ao painel e a esta tela
+// (NpCoverMeta/NpTitle/NpProgress/NpTransport/Spectrum + trkLabel) vivem em
+// com.mpx.player.ui.components (NpParts) — 1 definição cada, render byte-a-byte (fatia nowplaying).
 
 @Composable
 fun NowPlayingScreen(
@@ -98,7 +97,9 @@ fun NowPlayingScreen(
             }
             Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NpProgress(ui, actions)
-                NpTransport(ui, actions, favorite) { showPicker = true }
+                NpTransport(ui, actions) { m ->
+                    BookmarkButton(favorite, m, onTap = actions.toggleFavorite, onLong = { showPicker = true })
+                }
                 VolumeRow(volume, actions.setVolume, actions.mute)
                 Console(Modifier.weight(1f), ui, tech, lyrics, onEmpty = actions.openLibrary)
             }
@@ -109,7 +110,9 @@ fun NowPlayingScreen(
             NpCoverMeta(ui, tech)
             NpTitle(ui)
             NpProgress(ui, actions)
-            NpTransport(ui, actions, favorite) { showPicker = true }
+            NpTransport(ui, actions) { m ->
+                BookmarkButton(favorite, m, onTap = actions.toggleFavorite, onLong = { showPicker = true })
+            }
             NpConsoleRegionPortrait(Modifier.weight(1f), ui, tech, lyrics, volume, actions)
         }
     }
@@ -119,84 +122,6 @@ fun NowPlayingScreen(
             onPick = { actions.addToPlaylist(it); showPicker = false },
             onDismiss = { showPicker = false },
         )
-    }
-}
-
-private fun trkLabel(ui: PlayerUi) =
-    if (ui.queue.isEmpty()) "TRK --/--" else "TRK %02d/%02d".format(ui.index + 1, ui.queue.size)
-
-@Composable
-private fun NpCoverMeta(ui: PlayerUi, tech: TechInfo) {
-    val c = Mpx.colors
-    val t = ui.current
-    Row(Modifier.fillMaxWidth().frame().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Cover(t, Modifier.size(128.dp).frame(c.accent), disc = true, scanlines = true)
-        Column(Modifier.height(128.dp).weight(1f), verticalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Txt("ART -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                Txt(t?.artist?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
-                Txt("ALB -", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                Txt(t?.album?.uppercase() ?: "---", size = 12.sp, lineHeight = 17.sp)
-            }
-            Column {
-                Txt("FMT - ${tech.format} ${tech.bitrate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                Txt("RATE - ${tech.sampleRate}", size = 12.sp, color = c.dim, lineHeight = 17.sp)
-                Txt(tech.extra.ifEmpty { "---" }, size = 12.sp, color = c.dim, lineHeight = 17.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun NpTitle(ui: PlayerUi) {
-    val c = Mpx.colors
-    val t = ui.current
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Txt(
-            (t?.title?.uppercase()?.replace(' ', '_') ?: "NO_SIGNAL") + blinkingCursor(),
-            Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
-            size = 40.sp, display = true, glow = true, lineHeight = 40.sp,
-        )
-        Txt(
-            t?.dosPath ?: "C:\\MUSIC\\> _",
-            Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 3_000),
-            size = 12.sp, color = c.dim,
-        )
-    }
-}
-
-@Composable
-private fun NpProgress(ui: PlayerUi, actions: NowPlayingActions) {
-    val c = Mpx.colors
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val frac = if (ui.durationMs > 0) (ui.positionMs.toFloat() / ui.durationMs).coerceIn(0f, 1f) else 0f
-        SegmentBar(24, (frac * 24).roundToInt(), onSeek = actions.seek)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Txt(formatTime(ui.positionMs), size = 20.sp, display = true)
-            Txt("[${(frac * 100).roundToInt()}%]", size = 20.sp, display = true, color = c.dim)
-            Txt(formatTime(ui.durationMs), size = 20.sp, display = true)
-        }
-    }
-}
-
-@Composable
-private fun NpTransport(ui: PlayerUi, actions: NowPlayingActions, favorite: Boolean, onLongFavorite: () -> Unit) {
-    val c = Mpx.colors
-    Row(Modifier.fillMaxWidth().height(50.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        val m = Modifier.weight(1f).fillMaxHeight()
-        IconButton(
-            MpxIcons.Shuffle, m, border = if (ui.shuffle) c.accent else c.line,
-            tint = if (ui.shuffle) c.accent else c.dim, iconSize = 22.dp, onClick = actions.shuffle,
-        )
-        IconButton(MpxIcons.Prev, m, border = c.accent, onClick = actions.previous)
-        IconButton(if (ui.isPlaying) MpxIcons.Pause else MpxIcons.Play, m, filled = true, onClick = actions.toggle)
-        IconButton(MpxIcons.Next, m, border = c.accent, onClick = actions.next)
-        IconButton(
-            if (ui.repeat == RepeatMode.ONE) MpxIcons.RepeatOne else MpxIcons.Repeat, m,
-            border = if (ui.repeat != RepeatMode.OFF) c.accent else c.line,
-            tint = if (ui.repeat != RepeatMode.OFF) c.accent else c.dim, iconSize = 22.dp, onClick = actions.repeat,
-        )
-        BookmarkButton(favorite, m, onTap = actions.toggleFavorite, onLong = onLongFavorite)
     }
 }
 
@@ -278,7 +203,7 @@ private fun VolumeRow(volume: VolumeState, onSet: (Float) -> Unit, onMute: () ->
             }
         }
         Txt(
-            if (volume.muted) "MUTE" else "%03d".format(lit * 5),
+            if (volume.muted) "MUTE" else (lit * 5).toString().padStart(3, '0'),
             Modifier.width(46.dp).padding(end = 6.dp), size = 20.sp, display = true, align = TextAlign.End,
         )
     }
@@ -369,7 +294,7 @@ private fun VerticalVolume(volume: VolumeState, onSet: (Float) -> Unit, onMute: 
     val lit = if (volume.muted || volume.max == 0) 0 else (volume.level * 20f / volume.max).roundToInt()
     Column(modifier.background(c.bg).frame(), horizontalAlignment = Alignment.CenterHorizontally) {
         Txt(
-            if (volume.muted) "MUT" else "%03d".format(lit * 5),
+            if (volume.muted) "MUT" else (lit * 5).toString().padStart(3, '0'),
             Modifier.padding(vertical = 4.dp), size = 13.sp, display = true,
         )
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
@@ -400,43 +325,6 @@ private fun VerticalVolume(volume: VolumeState, onSet: (Float) -> Unit, onMute: 
             if (volume.muted) MpxIcons.Muted else MpxIcons.Volume,
             Modifier.fillMaxWidth().height(40.dp), border = c.bg, iconSize = 20.dp, onClick = onMute,
         )
-    }
-}
-
-private val SPECTRUM_BASE = intArrayOf(38, 62, 80, 55, 90, 72, 48, 66, 85, 58, 40, 70, 92, 64, 50, 76, 60, 44, 68, 82, 56, 36, 52, 46, 30, 42, 26, 18)
-
-@Composable
-private fun Spectrum(playing: Boolean) {
-    val c = Mpx.colors
-    var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(playing) {
-        while (playing) {
-            delay(110); tick++
-        }
-    }
-    Column(Modifier.fillMaxWidth().frame().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Txt(":: SPECTRUM", size = 11.sp, color = c.dim)
-            val l = if (playing) 4 + (tick % 3 == 0).compareTo(false) else 0
-            val r = if (playing) 3 + ((tick / 2) % 2) else 0
-            Txt("L ${"▮".repeat(l)}${"▯".repeat(6 - l)} R ${"▮".repeat(r)}${"▯".repeat(6 - r)}", size = 11.sp, color = c.dim)
-        }
-        Canvas(Modifier.fillMaxWidth().height(36.dp)) {
-            val n = SPECTRUM_BASE.size
-            val gap = 3.dp.toPx()
-            val bw = (size.width - gap * (n - 1)) / n
-            val seg = 3.dp.toPx()
-            val segGap = 2.dp.toPx()
-            for (i in 0 until n) {
-                val v = if (playing) (SPECTRUM_BASE[i] + ((tick * 7 + i * 13) % 23) - 11).coerceIn(8, 100) else 6
-                val h = size.height * v / 100f
-                var y = size.height - seg
-                while (y >= size.height - h) {
-                    drawRect(c.accent, Offset(i * (bw + gap), y), Size(bw, seg))
-                    y -= seg + segGap
-                }
-            }
-        }
     }
 }
 
