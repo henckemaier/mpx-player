@@ -29,7 +29,15 @@ import platform.AVFAudio.setActive
 import platform.AVFAudio.startAndReturnError
 import platform.AVFAudio.stop
 import platform.Foundation.NSURL
+import platform.MediaPlayer.MPMediaItemArtwork
+import platform.MediaPlayer.MPMediaItemPropertyArtwork
+import platform.MediaPlayer.MPNowPlayingInfoCenter
+import platform.MediaPlayer.MPRemoteCommandCenter
+import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
+import platform.UIKit.UIImage
+import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
 import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
 // NOTA K/N: os membros do grafo AVAudioEngine/AVAudioPlayerNode/AVAudioFile são MEMBROS DIRETOS
 // das @interface (framework AVFAudio) — chamam-se na instância SEM import (attachNode/connect/
@@ -170,6 +178,7 @@ class IosEngineAudioPlayer(
                 src.map { it.toAudioParams() }.distinctUntilChanged().collect { applyEqParams(it) }
             }
         }
+        setupRemoteCommands() // bind dos comandos do lock-screen (sub-3)
         _state.update { it.copy(connected = true) }
 
         pendingQueue?.let { (its, si, sl) ->
@@ -219,6 +228,71 @@ class IosEngineAudioPlayer(
         }.onFailure { println("IosEngineAudioPlayer: AVAudioSession não ativou: $it") }
     }
 
+    // --- Tela de bloqueio (now-playing / remote / artwork) — fiação PRÓPRIA do engine ---
+    // TODO(engine-graduation): unificar a fiação now-playing/remote/artwork do engine com o
+    // IosAudioPlayer QUANDO o engine graduar a padrão (device) — hoje duplicada de propósito p/
+    // manter a produção (AVQueuePlayer) byte-intocada (decisão [SD]=(b) da sub-3). A dup estreita
+    // (setup/teardownRemoteCommands + publishNowPlaying + loadArtworkAsync aqui; buildNowPlayingInfo
+    // e loadArtwork em IosNowPlaying.kt) sai junto com o backend AVQueuePlayer quando/se o flag cair.
+
+    /** Comandos remotos do lock-screen/Control Center (molde do [IosAudioPlayer]). Métodos já existem. */
+    private fun setupRemoteCommands() {
+        val cc = MPRemoteCommandCenter.sharedCommandCenter()
+        cc.playCommand.addTargetWithHandler { play(); MPRemoteCommandHandlerStatusSuccess }
+        cc.pauseCommand.addTargetWithHandler { pause(); MPRemoteCommandHandlerStatusSuccess }
+        cc.togglePlayPauseCommand.addTargetWithHandler { toggle(); MPRemoteCommandHandlerStatusSuccess }
+        cc.nextTrackCommand.addTargetWithHandler { next(); MPRemoteCommandHandlerStatusSuccess }
+        cc.previousTrackCommand.addTargetWithHandler { previous(); MPRemoteCommandHandlerStatusSuccess }
+    }
+
+    private fun teardownRemoteCommands() {
+        val cc = MPRemoteCommandCenter.sharedCommandCenter()
+        cc.playCommand.removeTarget(null)
+        cc.pauseCommand.removeTarget(null)
+        cc.togglePlayPauseCommand.removeTarget(null)
+        cc.nextTrackCommand.removeTarget(null)
+        cc.previousTrackCommand.removeTarget(null)
+        MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
+    }
+
+    /**
+     * Publica o now-playing da faixa atual: campos textuais+tempo via [buildNowPlayingInfo] (puro),
+     * depois a capa assíncrona ([loadArtworkAsync]). Escalares vêm do ENGINE (não de um AVPlayer):
+     * duração=[currentDurationSec], decorrido=[currentPositionSeconds], rate=1/0 por `isPlaying`.
+     * device-gated: o lock-screen EXTRAPOLA o decorrido entre updates via rate+timestamp → publicar
+     * em eventos discretos basta (sem push por-tick).
+     */
+    private fun publishNowPlaying() {
+        val item = items.getOrNull(order.getOrNull(pos) ?: -1) ?: return
+        val rate = if (_state.value.isPlaying) 1f else 0f
+        MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo =
+            buildNowPlayingInfo(item, currentDurationSec(), currentPositionSeconds(), rate)
+        loadArtworkAsync(item)
+    }
+
+    /**
+     * Carrega a capa FORA da main e MESCLA [MPMediaItemPropertyArtwork] no dicionário mais recente do
+     * NowPlaying — sem derrubar os textuais. Anti-race: captura o id no início e só aplica se a faixa
+     * ainda for a atual ([shouldApplyArtwork]). Molde do [IosAudioPlayer]; [loadArtwork] é a dup de
+     * IosNowPlaying.kt. Falha de load degrada graciosamente (fica sem capa).
+     */
+    private fun loadArtworkAsync(item: PlaybackItem) {
+        val uri = item.artworkUri ?: return
+        val startedId = item.id // capturado p/ o anti-race
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.convert(), 0.convert())) {
+            val image = loadArtwork(uri) ?: return@dispatch_async
+            dispatch_async(dispatch_get_main_queue()) {
+                val currentId = items.getOrNull(order.getOrNull(pos) ?: -1)?.id
+                if (!shouldApplyArtwork(startedId, currentId)) return@dispatch_async // faixa trocou: descarta
+                val center = MPNowPlayingInfoCenter.defaultCenter()
+                val merged = HashMap<Any?, Any?>()
+                center.nowPlayingInfo?.let { merged.putAll(it) }
+                merged[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize = image.size) { _ -> image }
+                center.nowPlayingInfo = merged
+            }
+        }
+    }
+
     override fun setQueue(items: List<PlaybackItem>, startIndex: Int, sourceLabel: String) {
         if (items.isEmpty()) return
         this.items = items
@@ -237,6 +311,7 @@ class IosEngineAudioPlayer(
         // Agenda SEM forçar play (play explícito). Preserva isPlaying: trocar a fila tocando segue
         // tocando a nova atual — paridade com o [IosAudioPlayer] (loadQueue não reinicia o play).
         rescheduleFromCurrent(0.0)
+        publishNowPlaying()
     }
 
     /** Abre o arquivo de um item (null = falha, degrada graciosamente). */
@@ -340,6 +415,7 @@ class IosEngineAudioPlayer(
         if (nextOp != null) scheduleOrderPos(nextOp, gen)?.let { pipeline.add(it) }
         _state.update { it.copy(index = pos) }
         syncState()
+        publishNowPlaying() // advance gapless: atualiza a faixa no lock-screen
     }
 
     override fun play() {
@@ -352,12 +428,14 @@ class IosEngineAudioPlayer(
         node.play()
         _state.update { it.copy(isPlaying = true) }
         syncState()
+        publishNowPlaying()
     }
 
     override fun pause() {
         playerNode?.pause()
         _state.update { it.copy(isPlaying = false) }
         syncState()
+        publishNowPlaying()
     }
 
     override fun toggle() {
@@ -369,6 +447,7 @@ class IosEngineAudioPlayer(
         val np = manualNextPos(pos, order.size, _state.value.repeat) ?: return // fim sem repeat: no-op
         pos = np
         rescheduleFromCurrent(0.0) // nova faixa do início; preserva isPlaying
+        publishNowPlaying()
     }
 
     override fun previous() {
@@ -377,6 +456,7 @@ class IosEngineAudioPlayer(
             is PrevAction.Restart -> rescheduleFromCurrent(0.0)
             is PrevAction.GoTo -> { pos = act.pos; rescheduleFromCurrent(0.0) }
         }
+        publishNowPlaying()
     }
 
     override fun seekTo(positionMs: Long) {
@@ -392,6 +472,7 @@ class IosEngineAudioPlayer(
         pos = index
         _state.update { it.copy(isPlaying = true) } // selecionar faixa implica tocar (ação explícita)
         rescheduleFromCurrent(0.0)
+        publishNowPlaying()
     }
 
     override fun setShuffle(enabled: Boolean) {
@@ -418,6 +499,7 @@ class IosEngineAudioPlayer(
         order = buildPlayOrder(items.size, current, shuffle = true) // atual no TOPO (ação "shuffle agora")
         pos = order.indexOf(current).coerceAtLeast(0)
         rescheduleFromCurrent(currentPositionSeconds()) // NÃO altera _state.shuffle
+        publishNowPlaying()
     }
 
     override fun clearUpcoming() {
@@ -430,6 +512,7 @@ class IosEngineAudioPlayer(
         // Colapsa p/ só a atual: reagenda sem a "próxima" (preserva a posição). O AVAudioPlayerNode
         // não remove um segmento específico, então o drop dos próximos é via stop+reschedule.
         rescheduleFromCurrent(currentPositionSeconds())
+        publishNowPlaying()
     }
 
     override fun clearQueue() {
@@ -444,6 +527,7 @@ class IosEngineAudioPlayer(
         pendingQueue = null
         pendingPlay = false
         _state.update { it.copy(queueIds = emptyList(), index = -1, isPlaying = false, positionMs = 0L) }
+        MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
     }
 
     override fun setVolume(fraction: Float) {
@@ -477,6 +561,7 @@ class IosEngineAudioPlayer(
         seekBaseSeconds = 0.0
         pendingQueue = null
         pendingPlay = false
+        teardownRemoteCommands() // solta os handlers do lock-screen + zera o nowPlayingInfo (sub-3)
         runCatching { AVAudioSession.sharedInstance().setActive(false, null) }
         _state.update { it.copy(connected = false, isPlaying = false) }
     }
