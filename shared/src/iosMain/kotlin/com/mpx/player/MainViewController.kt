@@ -73,8 +73,9 @@ import platform.UIKit.UIViewController
  *
  * ESPERADO no simulador: a Boot abre como splash e anima (step/bar) até PRESS ENTER, que gradua p/
  * o shell; daí a nav entre as 5 telas funciona; a biblioteca/fila iOS são vazias
- * (MPMediaQuery sem device) → contadores 0; a VolumeRow mostra o volume do sistema (read-only,
- * arrastar é no-op até a fatia de áudio). Conteúdo real só no iPhone. Registro, não falha. O teste
+ * (MPMediaQuery sem device) → contadores 0; a VolumeRow controla o GANHO DE PLAYBACK DO APP
+ * (AVPlayer.volume, settável) — arrastar/mutar muda o ganho, audível só no device. Conteúdo real só
+ * no iPhone. Registro, não falha. O teste
  * A/B offscreen ([NowPlayingPanelRenderTest]/[NavShellRenderTest]) é INDEPENDENTE do host (renderiza
  * `sampleUi`/dummy) e segue intacto.
  *
@@ -106,8 +107,9 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val settingsUi by settingsViewModel.ui.collectAsState()
     val eq by eqViewModel.eq.collectAsState()
     val eqSel by eqViewModel.selectedBand.collectAsState()
-    // Fontes extras da NowPlaying-cheia (o painel não usava): letras, volume (AVAudioSession.outputVolume
-    // read-only no iOS), favorito e playlists. Todas já expostas pelo PlayerViewModel comum.
+    // Fontes extras da NowPlaying-cheia (o painel não usava): letras, volume (= GANHO DE PLAYBACK
+    // DO APP, AVPlayer.volume, settável — fatia audio-volume), favorito e playlists. Todas já
+    // expostas pelo PlayerViewModel comum.
     val lyrics by playerViewModel.lyrics.collectAsState()
     val volume by playerViewModel.volume.collectAsState()
     val favorite by playerViewModel.favorite.collectAsState()
@@ -167,7 +169,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                     destinations = mapOf(
                         // Slot PLAY: NowPlaying-CHEIA comum (cover/meta/título/progresso/transporte +
                         // VolumeRow + Console CMD.LOG/LYRICS + PlaylistPicker + Spectrum) sobre o VM
-                        // ligado. Volume read-only no simulador (ver iosPlayerActions / TODO áudio).
+                        // ligado. Volume = ganho de playback do app, settável (ver iosPlayerActions).
                         Destination.PLAY to { NowPlayingScreen(playerUi, tech, lyrics, volume, favorite, playlists, playerActions) },
                         Destination.LIBRARY to { LibraryScreen(libUi, playerUi, libActions) },
                         // Slots Android = null (BAIXAR/IMPORTAR/UPDATE/SAÍDA somem); onReboot/
@@ -284,9 +286,10 @@ private fun iosQueueActions(vm: PlayerViewModel, onGoTo: (Destination) -> Unit):
  * Console) NAVEGA p/ LIBRARY via [onGoTo] — o MESMO setter vivo do nav (não um NavState capturado);
  * por isso o builder roda NA composição (sem remember), igual ao queueActions.
  *
- * TODO(audio-slice): volume real no iOS. Hoje `AVAudioSession.outputVolume` é READ-ONLY e o
- * `IosAudioPlayer.setVolume`/`toggleMute` são NO-OP documentados — a VolumeRow mostra o volume do
- * sistema (read-only) e arrastá-la NÃO muda o áudio. A fatia de áudio futura liga isto de verdade.
+ * Volume (fatia audio-volume, [D1=1a]): `setVolume`/`mute` são REAIS — ajustam o GANHO DE PLAYBACK
+ * DO APP (`AVPlayer.volume`), audível no device. Arrastar a VolumeRow muda o ganho; o mute zera/
+ * restaura. NÃO é o volume de sistema (iOS não expõe set por código) — diverge do Android. O efeito
+ * audível só se confirma no device; o CI prova lógica + compile/link.
  */
 private fun iosPlayerActions(vm: PlayerViewModel, onGoTo: (Destination) -> Unit): NowPlayingActions = NowPlayingActions(
     toggle = vm::toggle,
@@ -295,8 +298,8 @@ private fun iosPlayerActions(vm: PlayerViewModel, onGoTo: (Destination) -> Unit)
     seek = vm::seek,
     shuffle = vm::toggleShuffle,
     repeat = vm::cycleRepeat,
-    setVolume = vm::setVolume,   // TODO(audio-slice): no-op no iOS por ora (volume do sistema é read-only)
-    mute = vm::toggleMute,       // TODO(audio-slice): idem
+    setVolume = vm::setVolume,   // ganho de playback do app (AVPlayer.volume), settável/audível no device
+    mute = vm::toggleMute,       // zera/restaura o último ganho não-zero
     openLibrary = { onGoTo(Destination.LIBRARY) },
     toggleFavorite = vm::toggleFavorite,
     addToPlaylist = vm::addCurrentToPlaylist,

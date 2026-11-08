@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
-import platform.AVFAudio.outputVolume
 import platform.AVFAudio.setActive
 import platform.AVFoundation.AVMetadataCommonKeyArtwork
 import platform.AVFoundation.AVMetadataItem
@@ -31,6 +30,8 @@ import platform.AVFoundation.play
 import platform.AVFoundation.rate
 import platform.AVFoundation.removeTimeObserver
 import platform.AVFoundation.seekToTime
+import platform.AVFoundation.setVolume
+import platform.AVFoundation.volume
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotification
@@ -78,10 +79,14 @@ import platform.darwin.dispatch_get_main_queue
  * exigem a main thread; os callbacks — observador de tempo, fim de faixa e
  * comandos remotos — já são entregues na main). Ver KDoc de [AudioPlayer].
  *
- * Volume: no iOS o volume do sistema é **somente leitura** aqui ([volume] reflete
- * `AVAudioSession.outputVolume`). [setVolume]/[toggleMute] são no-op — setar volume
- * de sistema exige `MPVolumeView` (UI do usuário), desencorajado pela Apple e sem
- * efeito no simulador. A UI deve tratar o volume como read-only no iOS.
+ * Volume (decisão [D1=1a]): o [volume] aqui é o **GANHO DE PLAYBACK DO APP** —
+ * `AVPlayer.volume` (0..1 do `AVQueuePlayer`), que é **settável e audível** (no device).
+ * [setVolume] aplica o ganho; [toggleMute] zera/restaura o último ganho não-zero; a fonte
+ * da verdade de [refreshVolume] é `player.volume` (NÃO `AVAudioSession.outputVolume`). Isto
+ * NÃO é o volume de SISTEMA: o iOS não expõe set de volume de sistema por código (só a UI do
+ * `MPVolumeView`), então diverge do `AndroidAudioPlayer` (stream de sistema) por decisão.
+ * LIMITE: o CI prova lógica ([volumeLevel]/[applyMuteToggle]) + compile/link do K/N; o efeito
+ * AUDÍVEL só se vê no device (simulador headless não reproduz áudio audível).
  */
 @OptIn(ExperimentalForeignApi::class)
 class IosAudioPlayer : AudioPlayer {
@@ -89,8 +94,13 @@ class IosAudioPlayer : AudioPlayer {
     private val _state = MutableStateFlow(PlaybackState())
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
-    private val _volume = MutableStateFlow(VolumeState(max = 100))
+    // Ganho inicial = 100 (coerente com o AVPlayer, que nasce volume=1.0): a VolumeRow não mostra
+    // 0 e depois salta. Reaplicado ao player no connect() (ver lá) p/ preservar um alvo pré-conexão.
+    private val _volume = MutableStateFlow(VolumeState(level = 100, max = 100))
     override val volume: StateFlow<VolumeState> = _volume.asStateFlow()
+
+    // Último ganho não-zero, p/ o mute/unmute (estado puro consumido por [applyMuteToggle]).
+    private var lastNonZeroVolume: Float = 1f
 
     private var player: AVQueuePlayer? = null
     private var timeObserver: Any? = null
@@ -118,6 +128,10 @@ class IosAudioPlayer : AudioPlayer {
 
         val p = AVQueuePlayer()
         player = p
+        // O AVQueuePlayer nasce com volume=1.0; reaplica o alvo que o _volume já carrega (default
+        // 100 → 1.0, no-op; ou um setVolume/mute feito ANTES de conectar) p/ não dar salto. Em
+        // seguida o refreshVolume() reflete exatamente esse ganho.
+        p.setVolume(_volume.value.level / 100f)
         applyActionAtItemEnd(p)
         observeTime(p)
         observeItemEnd()
@@ -361,19 +375,28 @@ class IosAudioPlayer : AudioPlayer {
     }
 
     override fun setVolume(fraction: Float) {
-        // No-op: iOS não expõe set de volume de sistema (só MPVolumeView). Ver KDoc da classe.
-        refreshVolume()
+        // Ganho de playback do app (AVPlayer.volume). Com player null, guarda só o alvo no _volume;
+        // o connect() o reaplica. [lastNonZeroVolume] NÃO é tocado aqui: o mute captura o ganho
+        // corrente no momento do toggle.
+        val f = fraction.coerceIn(0f, 1f)
+        player?.setVolume(f)
+        _volume.update { it.copy(level = volumeLevel(f), max = 100, muted = f == 0f) }
     }
 
     override fun toggleMute() {
-        // No-op: sem mute de sistema programático no iOS. Ver KDoc da classe.
-        refreshVolume()
+        // Mute = zera o ganho guardando o último não-zero; unmute = restaura. Fonte do ganho
+        // corrente: o player (ou o _volume, se ainda não conectou). Lógica pura em [applyMuteToggle].
+        val cur = player?.volume ?: (_volume.value.level / 100f)
+        val (nv, nlz) = applyMuteToggle(cur, lastNonZeroVolume)
+        lastNonZeroVolume = nlz
+        player?.setVolume(nv)
+        _volume.update { it.copy(level = volumeLevel(nv), max = 100, muted = nv == 0f) }
     }
 
+    /** Re-sincroniza o _volume com o GANHO DO APP (player.volume). Sem player, mantém o alvo atual. */
     private fun refreshVolume() {
-        val v = AVAudioSession.sharedInstance().outputVolume
-        val level = (v * 100).toInt().coerceIn(0, 100)
-        _volume.update { it.copy(level = level, max = 100, muted = level == 0) }
+        val v = player?.volume ?: return
+        _volume.update { it.copy(level = volumeLevel(v), max = 100, muted = v == 0f) }
     }
 
     override fun release() {
@@ -596,3 +619,17 @@ internal fun endAdvancePos(pos: Int, size: Int, repeat: RepeatMode): Int? = when
 
 internal fun safeSeconds(s: Double): Double = if (s.isNaN() || s.isInfinite() || s < 0) 0.0 else s
 internal fun secondsToMs(s: Double): Long = (safeSeconds(s) * 1000).toLong()
+
+// --- Lógica pura do volume (sem AVFoundation) — testável no iosSimulatorArm64Test ---
+
+/** Fração de ganho 0..1 → nível 0..100 da [VolumeState] (clamp nas duas pontas). */
+internal fun volumeLevel(fraction: Float): Int = (fraction.coerceIn(0f, 1f) * 100).toInt().coerceIn(0, 100)
+
+/**
+ * Transição do mute/unmute: dado o ganho [current] e o último não-zero [lastNonZero], devolve
+ * `(novoGanho, novoUltimoNaoZero)`. Se [current] > 0 → MUTA (ganho 0, guardando [current]); se
+ * [current] == 0 → DESMUTA (restaura [lastNonZero], ou 1f se não há um válido; [lastNonZero] intacto).
+ */
+internal fun applyMuteToggle(current: Float, lastNonZero: Float): Pair<Float, Float> =
+    if (current > 0f) 0f to current
+    else (if (lastNonZero > 0f) lastNonZero else 1f) to lastNonZero
