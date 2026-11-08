@@ -47,10 +47,10 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 // Primitivos CRT portáveis (commonMain) consumidos pelas telas e pelo NowPlayingPanel do porte
-// iOS. Os blocos que dependem de Android (MpxHeader/BuildConfig, Tab/nav, Panel) ficam no Crt.kt
-// do :app, no MESMO pacote — Kotlin resolve entre módulos. DashedDivider migrou p/ cá na fatia
-// LIBRARY; ToggleRow migrou na fatia SETTINGS (puro; usado por EqScreen (:app) e SettingsScreen
-// comum).
+// iOS. DashedDivider migrou p/ cá na fatia LIBRARY; ToggleRow na fatia SETTINGS (puro; usado por
+// EqScreen (:app) e SettingsScreen comum); Panel + fmtThousands na fatia BOOT — com isso o Crt.kt
+// do :app esvaziou e foi REMOVIDO (todo o chrome de nav — MpxHeader/Tab/MpxNav — já tinha migrado
+// p/ Chrome.kt na fatia NAV). Zero bloco CRT sobrou no :app.
 
 // ---------------------------------------------------------------- texto
 
@@ -256,6 +256,21 @@ fun SegmentBar(
     }
 }
 
+/**
+ * Painel emoldurado simples (borda 1dp + padding). Migrou do Crt.kt (:app) na fatia BOOT — é puro
+ * (Box/border/padding), consumido pela BootScreen comum (@ECHO/LOGO e o log de boot). MESMO FQN
+ * `com.mpx.player.ui.components.Panel`, 1 definição.
+ */
+@Composable
+fun Panel(
+    modifier: Modifier = Modifier,
+    border: Color = Mpx.colors.line,
+    padding: Dp = 10.dp,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(modifier.border(1.dp, border).padding(padding), content = content)
+}
+
 // String.format/.format() é JVM-only (não existe em common). Reescrito com padStart
 // multiplataforma, MANTENDO o formato exato: horas sem pad, min/seg com pad2.
 fun formatTime(ms: Long): String {
@@ -275,6 +290,24 @@ fun fmt1(x: Double): String {
     val r = (kotlin.math.abs(x) * 10).roundToInt()
     val sign = if (x < 0 && r != 0) "-" else ""
     return "$sign${r / 10}.${r % 10}"
+}
+
+// "%,d".format(n).replace(',', '.') é JVM-only (String.format). Agrupa os dígitos de 3 em 3 com
+// '.' em Kotlin puro (multiplataforma), MANTENDO o formato exato: 0 -> "0", 999 -> "999",
+// 12345 -> "12.345", 1234567 -> "1.234.567". [n] é sempre >= 0 (contagem) → sem tratamento de sinal.
+// Usado pelo rótulo "> INDEX n FILES" do log de boot (BootScreen comum).
+fun fmtThousands(n: Int): String {
+    val s = n.toString()
+    if (s.length <= 3) return s
+    val groups = ArrayList<String>()
+    val first = s.length % 3
+    if (first > 0) groups.add(s.substring(0, first))
+    var i = first
+    while (i < s.length) {
+        groups.add(s.substring(i, i + 3))
+        i += 3
+    }
+    return groups.joinToString(".")
 }
 
 /** Divisória tracejada (listas de FAIXAS/ARTISTAS e ToggleRow). Puro — migrou do Crt.kt (:app). */

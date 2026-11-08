@@ -148,8 +148,10 @@ private fun MpxRoot(container: AndroidAppContainer, settings: UserSettings) {
                     scanned = library.scanned,
                     fileCount = library.tracks.size,
                     eqPreset = settings.eq.preset,
+                    version = BuildConfig.VERSION_NAME,
                     onRequestPermission = { request.launch(AUDIO_PERMISSION) },
                     onEnter = { booted = true },
+                    // stepOverride/barOverride omitidos (null) → anima de verdade, byte-idêntico ao de antes.
                 )
             } else {
                 // POLÍTICA A1 (idêntica a hoje): back só é tratado FORA de PLAY e volta DIRETO pra

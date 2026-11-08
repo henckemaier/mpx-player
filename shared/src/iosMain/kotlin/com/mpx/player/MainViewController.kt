@@ -33,6 +33,7 @@ import com.mpx.player.ui.components.LocalCoverLoader
 import com.mpx.player.ui.components.TextButton
 import com.mpx.player.ui.nav.Destination
 import com.mpx.player.ui.nav.NavState
+import com.mpx.player.ui.screens.BootScreen
 import com.mpx.player.ui.screens.EqActions
 import com.mpx.player.ui.screens.EqScreen
 import com.mpx.player.ui.screens.LibraryActions
@@ -54,8 +55,9 @@ import platform.UIKit.UIViewController
  * Fatia NAV (P7): o host troca o antigo seletor-de-raiz MÍNIMO (2 botões Library<->Settings da
  * fatia settings) pelo [MpxShell] COMUM — a MESMA máquina de navegação do `:app` (back-stack puro
  * [NavState] + chrome [com.mpx.player.ui.components.MpxNav]/[com.mpx.player.ui.components.MpxHeader]).
- * O mapa de destinos no iOS tem as 5 telas portadas (PLAY/LIBRARY/QUEUE/EQ/CONFIG); só o Boot
- * (fatia 4) fica fora → `enabled` libera tudo (sem aba morta). O back do iOS é um BOTÃO "< BACK"
+ * O mapa de destinos no iOS tem as 5 telas portadas (PLAY/LIBRARY/QUEUE/EQ/CONFIG); o Boot (fatia
+ * BOOT) é o SPLASH pré-shell (`if (!booted) BootScreen else MpxShell`), FORA do NavState — como não
+ * há destino BOOT na barra, `enabled` libera tudo (sem aba morta). O back do iOS é um BOTÃO "< BACK"
  * no cabeçalho (NÃO há BackHandler no iOS) visível quando [NavState.canGoBack] → `nav.pop()`
  * (política pop PLENO; swipe-back nativo = follow-up).
  *
@@ -69,7 +71,8 @@ import platform.UIKit.UIViewController
  * painel do gate A/B ([NowPlayingPanel]) reusa os MESMOS sub-composables (NpParts). Slot LIBRARY
  * = [LibraryScreen] (browse real). Slot CONFIG = [SettingsScreen] com slots Android = null.
  *
- * ESPERADO no simulador: nav entre as 5 telas funciona; a biblioteca/fila iOS são vazias
+ * ESPERADO no simulador: a Boot abre como splash e anima (step/bar) até PRESS ENTER, que gradua p/
+ * o shell; daí a nav entre as 5 telas funciona; a biblioteca/fila iOS são vazias
  * (MPMediaQuery sem device) → contadores 0; a VolumeRow mostra o volume do sistema (read-only,
  * arrastar é no-op até a fatia de áudio). Conteúdo real só no iPhone. Registro, não falha. O teste
  * A/B offscreen ([NowPlayingPanelRenderTest]/[NavShellRenderTest]) é INDEPENDENTE do host (renderiza
@@ -113,6 +116,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val libActions = remember { iosLibActions(libraryViewModel) }
     val setActions = remember { iosSettingsActions(settingsViewModel) }
     val eqActions = remember { iosEqActions(eqViewModel) }
+    // Gate de SPLASH (fatia BOOT, SUB-D=(a)): a Boot roda ANTES do shell, FORA do NavState. Começa
+    // false (mostra a Boot), `onEnter` vira true e gradua p/ o MpxShell. `remember` basta (sem
+    // recriação de Activity no iOS). Reboot/voltar-pra-boot não existe no iOS (Android-only).
+    var booted by remember { mutableStateOf(false) }
     // Back-stack puro ([NavState]), igual ao :app (lá é rememberSaveable; no iOS não há recriação de
     // Activity, remember basta). onSelect = goTo (reordena-sem-dup).
     var nav by remember { mutableStateOf(NavState()) }
@@ -139,6 +146,22 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 Modifier.fillMaxSize().background(Mpx.colors.bg).padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (!booted) {
+                    // Boot como SPLASH: hasPermission=true (iOS não tem READ_MEDIA_AUDIO → botão GRANT
+                    // nunca aparece), scanned=true, fileCount = contagem REAL já exposta no state
+                    // (LibraryUi.totalFiles), eqPreset = preset REAL do settings, version "1.0"
+                    // (determinístico, não BuildConfig). stepOverride/barOverride NULOS → o splash
+                    // anima de verdade (step/bar) até PRESS ENTER; onEnter gradua p/ o MpxShell.
+                    BootScreen(
+                        hasPermission = true,
+                        scanned = true,
+                        fileCount = libUi.totalFiles,
+                        eqPreset = settingsUi.settings.eq.preset,
+                        version = "1.0",
+                        onRequestPermission = {},
+                        onEnter = { booted = true },
+                    )
+                } else {
                 MpxShell(
                     nav = nav,
                     destinations = mapOf(
@@ -172,10 +195,11 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         }
                     },
                     version = "1.0",
-                    // Todas as 5 telas portadas (PLAY-cheia entrou); só o Boot (fatia 4) fica fora do
-                    // mapa. Como não há destino BOOT na barra, enabled pode liberar tudo.
+                    // Todas as 5 telas portadas (PLAY-cheia entrou); o Boot agora é o SPLASH pré-shell
+                    // (fatia BOOT), fora do NavState. Como não há destino BOOT na barra, enabled libera tudo.
                     enabled = { true },
                 )
+                }
             }
         }
     }

@@ -19,13 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mpx.player.BuildConfig
 import com.mpx.player.ui.components.HeaderLabel
 import com.mpx.player.ui.components.Panel
 import com.mpx.player.ui.components.SegmentBar
 import com.mpx.player.ui.components.TextButton
 import com.mpx.player.ui.components.Txt
 import com.mpx.player.ui.components.blinkingCursor
+import com.mpx.player.ui.components.fmtThousands
 import com.mpx.player.ui.components.frame
 import com.mpx.player.ui.theme.Mpx
 import kotlinx.coroutines.delay
@@ -37,38 +37,60 @@ private const val LOGO = """███╗   ███╗██████╗ █
 ██║ ╚═╝ ██║██║     ██╔╝ ██╗
 ╚═╝     ╚═╝╚═╝     ╚═╝  ╚═╝"""
 
+/**
+ * Splash/BIOS de abertura (RETRATO e PAISAGEM). Migrou de `:app` p/ commonMain na fatia BOOT do
+ * porte iOS (P7, MESMO FQN `com.mpx.player.ui.screens.BootScreen` → call-site do `:app` resolve sem
+ * mudança). NÃO é android-only estrutural: a permissão é só `hasPermission: Boolean` + callback, e o
+ * `version` entra por PARÂMETRO (Android passa `BuildConfig.VERSION_NAME`; iOS passa "1.0").
+ *
+ * [stepOverride]/[barOverride] (ambos default null) servem SÓ ao gate A/B: quando null (Android E o
+ * splash iOS) o `step`/`bar` ANIMAM de verdade pelos [LaunchedEffect] — comportamento byte-idêntico
+ * ao de antes. Quando fornecidos (A/B passa 6/20) a tela usa os valores FIXOS e os [LaunchedEffect]
+ * NÃO rodam (frame TERMINAL determinístico): o ÚNICO bit animado no frame terminal é o cursor
+ * piscante do "//PLAYER".
+ */
 @Composable
 fun BootScreen(
     hasPermission: Boolean,
     scanned: Boolean,
     fileCount: Int,
     eqPreset: String,
+    version: String,
     onRequestPermission: () -> Unit,
     onEnter: () -> Unit,
+    stepOverride: Int? = null,
+    barOverride: Int? = null,
 ) {
     val c = Mpx.colors
-    // quantas linhas do log de boot já "rodaram"
-    var step by remember { mutableIntStateOf(0) }
-    LaunchedEffect(hasPermission, scanned) {
-        while (step < 6) {
-            if (step == 2 && !hasPermission) return@LaunchedEffect
-            if (step == 3 && !scanned) return@LaunchedEffect
-            delay(260)
-            step++
+    // quantas linhas do log de boot já "rodaram". Sem override: anima via LaunchedEffect (trava em
+    // step=2 sem permissão / step=3 sem scan). Com override: valor FIXO, LaunchedEffect não roda.
+    var stepState by remember { mutableIntStateOf(0) }
+    if (stepOverride == null) {
+        LaunchedEffect(hasPermission, scanned) {
+            while (stepState < 6) {
+                if (stepState == 2 && !hasPermission) return@LaunchedEffect
+                if (stepState == 3 && !scanned) return@LaunchedEffect
+                delay(260)
+                stepState++
+            }
         }
     }
+    val step = stepOverride ?: stepState
     val ready = step >= 6
-    var bar by remember { mutableIntStateOf(0) }
-    LaunchedEffect(step) {
-        val target = (step * 20 / 6).coerceAtMost(20)
-        while (bar < target) {
-            delay(40); bar++
+    var barState by remember { mutableIntStateOf(0) }
+    if (barOverride == null) {
+        LaunchedEffect(step) {
+            val target = (step * 20 / 6).coerceAtMost(20)
+            while (barState < target) {
+                delay(40); barState++
+            }
         }
     }
+    val bar = barOverride ?: barState
 
     if (Mpx.landscape) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            BootHeader()
+            BootHeader(version)
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     BootBranding()
@@ -80,7 +102,7 @@ fun BootScreen(
         }
     } else {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            BootHeader()
+            BootHeader(version)
             BootBranding()
             BootLog(Modifier.fillMaxWidth().weight(1f), hasPermission, scanned, fileCount, eqPreset, step, bar, ready)
             BootButton(hasPermission, ready, onRequestPermission, onEnter)
@@ -90,12 +112,12 @@ fun BootScreen(
 }
 
 @Composable
-private fun BootHeader() {
+private fun BootHeader(version: String) {
     Row(
         Modifier.fillMaxWidth().frame().padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        HeaderLabel("MPX BIOS (TM)"); HeaderLabel("RESEARCH"); HeaderLabel("VER ${BuildConfig.VERSION_NAME}")
+        HeaderLabel("MPX BIOS (TM)"); HeaderLabel("RESEARCH"); HeaderLabel("VER $version")
     }
 }
 
@@ -132,7 +154,7 @@ private fun BootLog(
             val lines = listOf(
                 "> CHECK AUDIO_DAC" to "[ OK ]",
                 "> MOUNT /music" to if (hasPermission) "[ OK ]" else "[WAIT]",
-                "> INDEX ${"%,d".format(fileCount).replace(',', '.')} FILES" to if (scanned) "[ OK ]" else "[....]",
+                "> INDEX ${fmtThousands(fileCount)} FILES" to if (scanned) "[ OK ]" else "[....]",
                 "> LOAD CODEC mp3/flac" to "[ OK ]",
                 "> EQ PRESET ${eqPreset.lowercase()}" to "[ OK ]",
                 "> INTERNET CONNECTION" to "[NOPE]",
