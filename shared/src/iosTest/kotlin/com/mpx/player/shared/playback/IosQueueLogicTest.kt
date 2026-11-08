@@ -3,6 +3,7 @@ package com.mpx.player.shared.playback
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Lógica pura da fila do IosAudioPlayer (sem AVFoundation): ordem de reprodução,
@@ -106,6 +107,36 @@ class IosQueueLogicTest {
         assertEquals(1.5, safeSeconds(1.5))
         assertEquals(1500L, secondsToMs(1.5))
         assertEquals(0L, secondsToMs(Double.NaN))
+    }
+
+    @Test
+    fun buildShuffleAll_permutacaoCompleta_semTopoFixo() {
+        // FLAG de shuffle [SD=b]: PERMUTAÇÃO COMPLETA de 0..size-1, NENHUMA faixa presa no topo
+        // (distinto do buildPlayOrder(..., true), que põe [start] no topo).
+        val o = buildShuffleAll(6)
+        assertEquals(6, o.size)
+        assertEquals((0..5).toList(), o.sorted())   // permutação: todos presentes, sem repetição
+        assertEquals(emptyList(), buildShuffleAll(0))
+        assertEquals(listOf(0), buildShuffleAll(1))
+    }
+
+    @Test
+    fun setShuffleFlag_permutacaoCompleta_atualPreservada_ondeCair() {
+        // Convenção pós-setShuffle(true) [SD=b, canônica = Android/ExoPlayer]: order=buildShuffleAll(N);
+        // a faixa atual é PRESERVADA no índice ONDE CAIR (pos=indexOf), podendo ser > 0 — diferente do
+        // shuffleQueue(), que a põe no topo. Verifica as INVARIANTES de forma (o sorteio é aleatório),
+        // repetindo várias vezes.
+        val items = pbItems("a", "b", "c", "d", "e", "f")
+        val atual = 3 // "d" (índice original)
+        repeat(50) {
+            val order = buildShuffleAll(items.size)
+            val pos = order.indexOf(atual)
+            assertTrue(pos >= 0, "a atual sempre está na permutação (buildShuffleAll é 0..N-1)")
+            val ids = queueIdsInPlayOrder(items, order)
+            assertEquals(items.size, ids.size)                          // sem perdas
+            assertEquals(items.map { it.id }.sorted(), ids.sorted())    // permutação de TODOS os ids
+            assertEquals("d", ids[pos])                                 // queueIds[index] == id da atual
+        }
     }
 
     // --- Helpers de teste ---

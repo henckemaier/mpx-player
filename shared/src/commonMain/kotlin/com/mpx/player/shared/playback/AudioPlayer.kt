@@ -27,7 +27,10 @@ data class PlaybackState(
     val connected: Boolean = false,
     /**
      * Ids na ORDEM DE REPRODUÇÃO (a mesma em que as faixas vão tocar); [index] aponta
-     * a posição atual nessa ordem. Convenção comum às duas plataformas.
+     * a posição atual nessa ordem. Convenção comum às duas plataformas. No modo aleatório
+     * a forma de [queueIds] segue a convenção canônica de [AudioPlayer.setShuffle] (FLAG:
+     * permutação completa, atual preservada onde cair) e [AudioPlayer.shuffleQueue] ("shuffle
+     * agora": atual no topo).
      */
     val queueIds: List<String> = emptyList(),
     val index: Int = -1,
@@ -82,13 +85,26 @@ interface AudioPlayer {
     fun seekTo(positionMs: Long)
     fun seekToFraction(fraction: Float)
     fun seekToIndex(index: Int)
+
+    /**
+     * Liga/desliga o FLAG de modo aleatório. Convenção CANÔNICA de [PlaybackState.queueIds]
+     * (comum às plataformas; modelo nativo do Android/ExoPlayer, `shuffleModeEnabled`):
+     * - `enabled = true`: [PlaybackState.queueIds] vira uma PERMUTAÇÃO COMPLETA de TODOS os itens.
+     *   A faixa atual é PRESERVADA (segue tocando) no índice ONDE CAIR na permutação —
+     *   `queueIds[index] == currentId`, com `index` podendo ser `> 0` (a atual NÃO é forçada ao topo).
+     * - `enabled = false`: volta à ORDEM DE INSERÇÃO (identidade).
+     * O sorteio em si difere entre plataformas (inerente ao `shuffled()`/ExoPlayer); o CANÔNICO são
+     * as INVARIANTES de forma (permutação completa + atual preservada). Distinto de [shuffleQueue]
+     * (ação "shuffle agora": a atual vai pro TOPO, index=0).
+     */
     fun setShuffle(enabled: Boolean)
     fun setRepeat(mode: RepeatMode)
 
     /**
      * Reembaralha a ordem de reprodução da fila atual mantendo a faixa atual tocando
-     * (ela vira o topo da nova ordem; posição dentro da faixa preservada). NÃO altera
-     * o flag [PlaybackState.shuffle]. No-op se a fila estiver vazia.
+     * (ela vira o TOPO da nova ordem, index=0; posição dentro da faixa preservada). NÃO altera
+     * o flag [PlaybackState.shuffle]. No-op se a fila estiver vazia. Distinto do FLAG
+     * [setShuffle]`(true)`, que faz PERMUTAÇÃO COMPLETA preservando a atual onde cair (não no topo).
      */
     fun shuffleQueue()
 

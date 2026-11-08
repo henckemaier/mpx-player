@@ -182,7 +182,9 @@ class IosAudioPlayer : AudioPlayer {
         items = newItems
         val start = startIndex.coerceIn(0, newItems.lastIndex)
         // Shuffle NÃO é resetado aqui (espelha o Android/contrato): mantém o modo atual.
-        order = buildPlayOrder(newItems.size, start, _state.value.shuffle)
+        // [SD=b] com o FLAG shuffle LIGADO, carrega em PERMUTAÇÃO COMPLETA (mesma convenção do
+        // setShuffle/ExoPlayer) — a start NÃO é presa no topo; pos=indexOf reflete onde ela caiu.
+        order = if (_state.value.shuffle) buildShuffleAll(newItems.size) else buildPlayOrder(newItems.size, start, shuffle = false)
         pos = order.indexOf(start).coerceAtLeast(0)
         rebuildPlayerItems()
         _state.update { it.copy(sourceLabel = sourceLabel) }
@@ -287,8 +289,12 @@ class IosAudioPlayer : AudioPlayer {
         val current = order.getOrNull(pos) ?: 0
         val resumeSec = currentSeconds(p)       // preserva a posição da faixa atual
         val wasPlaying = p.rate != 0f
-        order = buildPlayOrder(items.size, current, enabled)
-        // Mantém a faixa ATUAL (no shuffle ela fica no topo→0; na identidade, no índice dela);
+        // [SD=b] FLAG de shuffle = PERMUTAÇÃO COMPLETA (modelo Android/ExoPlayer): a faixa atual NÃO
+        // é presa no topo — fica ONDE CAIR na permutação (pos=indexOf reflete isso, podendo ser >0).
+        // Desligar volta à ordem de inserção (identidade). A ação "shuffle agora" ([shuffleQueue])
+        // é distinta (mantém a atual no topo) e NÃO passa por aqui.
+        order = if (enabled) buildShuffleAll(items.size) else buildPlayOrder(items.size, current, shuffle = false)
+        // Mantém a faixa ATUAL (permutação: no índice onde caiu; identidade: no índice dela);
         // pos=0 fixo pularia pra faixa 0 ao DESLIGAR o shuffle.
         pos = order.indexOf(current).coerceAtLeast(0)
         rebuildPlayerItems()
@@ -599,6 +605,16 @@ internal fun buildPlayOrder(size: Int, start: Int, shuffle: Boolean): List<Int> 
     val rest = (0 until size).filter { it != s }.shuffled()
     return listOf(s) + rest
 }
+
+/**
+ * PERMUTAÇÃO COMPLETA de 0..[size]-1 — NENHUMA faixa presa no topo. É a ordem de reprodução do
+ * FLAG de shuffle ([setShuffle]`(true)`), que espelha o modelo nativo do Android/ExoPlayer: a
+ * faixa atual é PRESERVADA (segue tocando) no índice ONDE CAIR na permutação, não no topo.
+ * Distinta de [buildPlayOrder]`(..., shuffle = true)`, que põe `[start]` no topo (a ação pontual
+ * "shuffle agora" do [shuffleQueue], convenção própria).
+ */
+internal fun buildShuffleAll(size: Int): List<Int> =
+    if (size <= 0) emptyList() else (0 until size).shuffled()
 
 /** Próximo [pos] no `next()` MANUAL (ONE conta como OFF). `null` = no-op (fim sem repeat). */
 internal fun manualNextPos(pos: Int, size: Int, repeat: RepeatMode): Int? = when {
