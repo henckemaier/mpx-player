@@ -58,6 +58,20 @@ import platform.darwin.dispatch_get_main_queue
  * [applyEqParams]. O mapeamento `EqSettings`→[EqAudioParams] é puro/testado; o timbre/largura
  * AUDÍVEL é device-gated (ver [applyEqParams]/[EQ_BANDWIDTH_OCTAVES]).
  *
+ * ## Fidelidade: surround/loudness (NO-OP CONSCIENTE, sub-5)
+ * Este backend — agora uma alternativa CHEIA ao `AVQueuePlayer` (sub-1 arranque + sub-2 fila/gapless
+ * + sub-4 EQ + sub-3 now-playing/remote/artwork + sub-5) — aplica SOMENTE o **EQ de 10 bandas +
+ * preamp** (via [applyEqParams]/[EqAudioParams]). Os campos `EqSettings.surround` (Android
+ * `Virtualizer`) e `EqSettings.loudness` (Android `LoudnessEnhancer`) são **NO-OP no iOS**: não há
+ * `AVAudioUnit` com equivalência 1:1, então ficam DE FORA — é um GAP CONSCIENTE de fidelidade, NÃO
+ * esquecimento. O [EqAudioParams] já os EXCLUI por construção (`EqSettings.toAudioParams()` ignora
+ * ambos) e o teste `EqAudioParamsTest.surroundELoudness_foraDosParams_gapDocumentado` fixa o no-op
+ * do mapeamento (ligar surround+loudness não altera `bands` nem `globalGainDb`). Como o engine só
+ * consome [EqAudioParams], não há ponto onde surround/loudness teriam efeito — a ausência é total e
+ * intencional. Aproximá-los (ex.: `AVAudioUnitReverb`/compressão custom) seria fatia futura, se o
+ * usuário pedir. Esta é a sub-5, que FECHA a frente engine-flag (5/5) — backend-engine completo
+ * atrás do flag OFF, com a validação COMPORTAMENTAL (áudio/efeitos audíveis) device-gated.
+ *
  * ## Estratégia de fila (SUB-2, opção A) — GAPLESS num único nó
  * O `AVAudioPlayerNode` NÃO tem fila nativa (ao contrário do `AVQueuePlayer`), mas aceita vários
  * `scheduleFile`/`scheduleSegment` ENCADEADOS no mesmo nó → reprodução gapless nativa. Mantemos
