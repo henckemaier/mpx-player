@@ -61,12 +61,40 @@ fun main(args: Array<String>) {
     println("URL da LAN:  http://$host:$port")
     println("  /ping     http://$host:$port/ping?token=$token")
     println("  /library  http://$host:$port/library?token=$token")
+    println()
+
+    // QR de pareamento: leia com a câmera/leitor do sistema do celular -> abre o MPX pareado.
+    val payload = buildPairPayload(host, port, token)
+    runCatching {
+        println("QR DE PAREAMENTO (leia com a câmera/leitor do sistema do celular):")
+        println(qrToAnsi(pairQrMatrix(payload)))
+    }.onFailure { System.err.println("QR indisponível: ${it.message}") }
+    println("Payload: $payload")
     println("Bind: $host:$port (LAN-only; nunca 0.0.0.0). Ctrl+C p/ parar.")
     println()
 
-    embeddedServer(CIO, host = host, port = port) {
+    val engine = embeddedServer(CIO, host = host, port = port) {
         mpxAgentModule(library, token, AGENT_VERSION)
-    }.start(wait = true)
+    }
+    engine.start(wait = false)
+
+    // Descoberta automática: anuncia _mpx._tcp na LAN (sem o token). Degrada se indisponível.
+    val mdns = runCatching { registerMdns(host, port) }.getOrNull()
+    if (mdns != null) {
+        println("mDNS: \"MPX Desktop\" (_mpx._tcp) anunciado na porta $port — SEM token no anúncio.")
+    } else {
+        System.err.println("mDNS indisponível (descoberta automática off; use o IP/QR).")
+    }
+
+    val stop = java.util.concurrent.CountDownLatch(1)
+    Runtime.getRuntime().addShutdownHook(
+        Thread {
+            runCatching { mdns?.unregisterAllServices(); mdns?.close() }
+            runCatching { engine.stop(500, 1500) }
+            stop.countDown()
+        },
+    )
+    stop.await() // mantém o processo vivo até o Ctrl+C (shutdown hook)
 }
 
 private class Options(val folder: String?, val port: Int?, val host: String?)

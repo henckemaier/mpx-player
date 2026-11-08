@@ -28,6 +28,8 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
     implementation("net.jthink:jaudiotagger:$jaudiotaggerVersion")
+    implementation("com.google.zxing:core:3.5.3")   // QR-gen do pareamento (JVM puro)
+    implementation("org.jmdns:jmdns:3.5.9")          // anúncio mDNS _mpx._tcp (descoberta)
 
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
