@@ -11,25 +11,16 @@ import platform.AVFAudio.AVAudioFile
 import platform.AVFAudio.AVAudioPlayerNode
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
-import platform.AVFAudio.attachNode
-import platform.AVFAudio.connect
-import platform.AVFAudio.lastRenderTime
-import platform.AVFAudio.length
-import platform.AVFAudio.mainMixerNode
-import platform.AVFAudio.pause
-import platform.AVFAudio.play
-import platform.AVFAudio.playerTimeForNodeTime
-import platform.AVFAudio.prepare
-import platform.AVFAudio.processingFormat
 import platform.AVFAudio.sampleRate
-import platform.AVFAudio.scheduleFile
-import platform.AVFAudio.scheduleSegment
 import platform.AVFAudio.setActive
-import platform.AVFAudio.setVolume
 import platform.AVFAudio.startAndReturnError
 import platform.AVFAudio.stop
-import platform.AVFAudio.volume
 import platform.Foundation.NSURL
+// NOTA K/N: os membros do grafo AVAudioEngine/AVAudioPlayerNode/AVAudioFile são MEMBROS DIRETOS
+// das @interface (framework AVFAudio) — chamam-se na instância SEM import (attachNode/connect/
+// prepare/play/pause/scheduleFile/scheduleSegment/volume/mainMixerNode/lastRenderTime/
+// playerTimeForNodeTime/length/processingFormat). Diferente de AVPlayer.volume/setVolume
+// (AVFoundation), que são de CATEGORIA → extensions e PRECISAM de import (ver kn-avfoundation-interop).
 
 /**
  * Backend iOS **ALTERNATIVO** sobre `AVAudioEngine` + `AVAudioPlayerNode`, implementando o
@@ -108,7 +99,7 @@ class IosEngineAudioPlayer : AudioPlayer {
 
         engine = e
         playerNode = node
-        node.setVolume(_volume.value.level / 100f) // reaplica alvo pré-conexão (no-op no default 100)
+        node.volume = _volume.value.level / 100f // reaplica alvo pré-conexão (no-op no default 100)
         _state.update { it.copy(connected = true) }
 
         pendingItem?.let { pnd ->
@@ -221,7 +212,9 @@ class IosEngineAudioPlayer : AudioPlayer {
 
     override fun setVolume(fraction: Float) {
         val fr = fraction.coerceIn(0f, 1f)
-        playerNode?.setVolume(fr)
+        // AVAudioPlayerNode.volume é @property direta → atribuição (K/N expõe como var; não há
+        // setVolume de categoria como no AVPlayer). Safe-call-assign não existe → via let.
+        playerNode?.let { it.volume = fr }
         _volume.update { it.copy(level = volumeLevel(fr), max = 100, muted = fr == 0f) }
     }
 
@@ -229,7 +222,7 @@ class IosEngineAudioPlayer : AudioPlayer {
         val cur = playerNode?.volume ?: (_volume.value.level / 100f)
         val (nv, nlz) = applyMuteToggle(cur, lastNonZeroVolume)
         lastNonZeroVolume = nlz
-        playerNode?.setVolume(nv)
+        playerNode?.let { it.volume = nv }
         _volume.update { it.copy(level = volumeLevel(nv), max = 100, muted = nv == 0f) }
     }
 
