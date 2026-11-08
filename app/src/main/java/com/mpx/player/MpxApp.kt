@@ -11,6 +11,7 @@ import com.mpx.player.data.LyricsRepository
 import com.mpx.player.data.OverrideRepository
 import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.PlaylistRepository
+import com.mpx.player.data.RemoteLibrarySource
 import com.mpx.player.data.SettingsRepository
 import com.mpx.player.data.UpdateRepository
 import com.mpx.player.playback.PlayerController
@@ -20,7 +21,8 @@ import java.io.File
 class AppContainer(val context: Context, val crashLog: CrashLog) {
     val settings = SettingsRepository(context)
     val overrides = OverrideRepository(context)
-    val library = LibraryRepository(context, overrides)
+    val remote = RemoteLibrarySource(settings)
+    val library = LibraryRepository(context, overrides, remote)
     val lyrics = LyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)
     val playlists = PlaylistRepository(context)

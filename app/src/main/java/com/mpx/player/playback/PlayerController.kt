@@ -196,7 +196,7 @@ class PlayerController(private val context: Context) {
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setArtworkUri(ContentUris.withAppendedId(ALBUM_ART, albumId))
+                .setArtworkUri(artUri ?: ContentUris.withAppendedId(ALBUM_ART, albumId))
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(Bundle().apply { putLong("albumId", albumId) })

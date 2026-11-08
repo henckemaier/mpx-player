@@ -11,6 +11,8 @@ import android.util.Size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 /** Capa já processada, pronta para desenhar. */
 sealed interface CoverArt {
@@ -35,6 +37,19 @@ class CoverArtLoader(private val context: Context) {
             val key = "$albumId/$style/$mono/$accent/$bg"
             processed.get(key)?.let { return@withContext it }
             val src = rawBitmap(albumId, trackUri) ?: return@withContext null
+            process(src, key, style, mono, accent, bg)
+        }
+
+    /**
+     * Capa REMOTA (agente desktop): busca a imagem de [artUri] (com ?token= embutido) por HTTP e
+     * passa pelo MESMO pipeline [process] (dither/ascii). Cache pelo id sintético (negativo), sem
+     * tocar o caminho LOCAL (loadThumbnail/embeddedPicture). Falha de rede -> null -> GeneratedCover.
+     */
+    suspend fun loadRemote(id: Long, artUri: Uri, style: Int, mono: Boolean, accent: Int, bg: Int): CoverArt? =
+        withContext(Dispatchers.Default) {
+            val key = "remote:$id/$style/$mono/$accent/$bg"
+            processed.get(key)?.let { return@withContext it }
+            val src = remoteBitmap(id, artUri) ?: return@withContext null
             process(src, key, style, mono, accent, bg)
         }
 
@@ -82,6 +97,36 @@ class CoverArtLoader(private val context: Context) {
         if (bmp == null) missing += albumId else raw.put(albumId, bmp)
         bmp
     }
+
+    /** Baixa a capa remota (negativa = id sintético) por HTTP e reduz para ~320px. */
+    private suspend fun remoteBitmap(id: Long, artUri: Uri): Bitmap? = withContext(Dispatchers.IO) {
+        raw.get(id)?.let { return@withContext it }
+        if (id in missing) return@withContext null
+        val bytes = runCatching {
+            val conn = (URL(artUri.toString()).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 6000
+                readTimeout = 6000
+            }
+            try {
+                if (conn.responseCode != 200) null else conn.inputStream.readBytes()
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrNull()
+        val bmp = bytes?.let { decodeScaled(it) }
+        if (bmp == null) missing += id else raw.put(id, bmp)
+        bmp
+    }
+
+    /** Decodifica bytes de imagem reduzindo para ~320px (mesma estratégia da arte embutida). */
+    private fun decodeScaled(bytes: ByteArray): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val minDim = minOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
+        val opts = BitmapFactory.Options().apply { inSampleSize = Integer.highestOneBit((minDim / 320).coerceAtLeast(1)) }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+    }.getOrNull()
 
     /** Arte embutida (ID3/APIC etc.) lida diretamente do arquivo, reduzida para ~320px. */
     private fun embeddedPicture(uri: Uri): Bitmap? {

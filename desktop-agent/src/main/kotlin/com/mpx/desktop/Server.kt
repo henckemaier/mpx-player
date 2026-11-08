@@ -9,6 +9,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.plugins.autohead.AutoHeadResponse
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.partialcontent.PartialContent
 import io.ktor.server.plugins.statuspages.StatusPages
@@ -28,6 +29,9 @@ import io.ktor.server.routing.routing
 fun Application.mpxAgentModule(library: Library, token: String, version: String) {
     install(ContentNegotiation) { json() }
     install(PartialContent)
+    // HEAD /stream/{id} -> roda o GET e descarta o corpo (200 + headers, incl. Accept-Ranges).
+    // Alguns players fazem HEAD antes do GET+Range; sem isto cairia em 404.
+    install(AutoHeadResponse)
     install(StatusPages) {
         status(HttpStatusCode.Unauthorized) { call, status ->
             call.respondText("401 Unauthorized\n", status = status)

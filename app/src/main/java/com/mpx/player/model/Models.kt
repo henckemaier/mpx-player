@@ -2,6 +2,9 @@ package com.mpx.player.model
 
 import android.net.Uri
 
+/** Origem de uma faixa: LOCAL (MediaStore do aparelho) ou REMOTE (agente desktop, via stream). */
+enum class TrackOrigin { LOCAL, REMOTE }
+
 data class Track(
     val id: Long,
     val uri: Uri,
@@ -18,7 +21,16 @@ data class Track(
     val year: Int?,
     /** Caminho de uma capa personalizada (override do app); null = usa a arte embutida. */
     val coverOverride: String? = null,
+    /** Origem da faixa. DEFAULT=LOCAL preserva todo o caminho local byte-idêntico. */
+    val origin: TrackOrigin = TrackOrigin.LOCAL,
+    /** id estável do agente (SHA-1 do relPath) quando REMOTE; null no LOCAL. */
+    val remoteId: String? = null,
+    /** URL da capa remota (/art?token=) quando REMOTE e há arte; null no LOCAL/sem arte. */
+    val artUri: Uri? = null,
 ) {
+    val isOfflineAvailable: Boolean get() = origin == TrackOrigin.LOCAL
+    val isStreamOnly: Boolean get() = origin == TrackOrigin.REMOTE
+
     /** Identidade estável do arquivo (sobrevive a mudanças do _ID do MediaStore). */
     val key: String get() = (relativePath + displayName).lowercase()
 
@@ -95,6 +107,9 @@ data class UserSettings(
     val lastScan: Long = 0L,
     val playlistsImported: Int = 0,
     val eq: EqSettings = EqSettings(),
+    /** Agente desktop pareado (host:porta) e token; null = desconectado (aditivo). */
+    val desktopHost: String? = null,
+    val desktopToken: String? = null,
 )
 
 data class EqSettings(
