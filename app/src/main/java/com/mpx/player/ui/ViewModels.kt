@@ -15,6 +15,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mpx.player.AppContainer
 import com.mpx.player.MpxApp
+import com.mpx.player.data.DiscoveredAgent
 import com.mpx.player.data.LibraryState
 import com.mpx.player.data.PlaylistLogic
 import com.mpx.player.data.RemoteState
@@ -441,6 +442,9 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
 
     // ---- Conectar ao agente desktop (desktop-sync)
     val desktop: StateFlow<RemoteState> = app.remote.state.state(this, RemoteState())
+
+    /** Agentes descobertos por mDNS (liga/desliga a descoberta conforme a UI assina). */
+    val discovered: StateFlow<List<DiscoveredAgent>> = app.discovery.discover().state(this, emptyList())
 
     fun connectDesktop(host: String, token: String) = app.remote.connect(host, token)
     fun disconnectDesktop() = app.remote.disconnect()

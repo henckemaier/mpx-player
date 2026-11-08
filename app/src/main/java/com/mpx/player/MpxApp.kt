@@ -3,6 +3,7 @@ package com.mpx.player
 import android.app.Application
 import android.content.Context
 import com.mpx.player.data.CoverArtLoader
+import com.mpx.player.data.DesktopDiscovery
 import com.mpx.player.data.Downloader
 import com.mpx.player.data.LibraryRepository
 import com.mpx.player.data.LyricsRepository
@@ -19,6 +20,7 @@ class AppContainer(val context: Context) {
     val settings = SettingsRepository(context)
     val overrides = OverrideRepository(context)
     val remote = RemoteLibrarySource(settings)
+    val discovery = DesktopDiscovery(context)
     val library = LibraryRepository(context, overrides, remote)
     val lyrics = LyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)

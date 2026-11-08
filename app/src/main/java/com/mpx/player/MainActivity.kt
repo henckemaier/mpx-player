@@ -1,6 +1,7 @@
 package com.mpx.player
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         container.player.connect()
+        handlePairLink(intent) // deep-link mpx://pair no cold start
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
             MpxTheme(settings) { MpxRoot(container, settings) }
@@ -88,6 +90,24 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         container.player.connect()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairLink(intent) // deep-link mpx://pair com a Activity já viva (singleTask)
+    }
+
+    /**
+     * Deep-link de pareamento: lê a câmera/leitor do sistema abriu mpx://pair?... -> parseia (puro)
+     * -> auto-conecta ao agente (reusa o fluxo da sub-2; prefill do host aparece na tela Conectar).
+     * Sem câmera no app; a Uri NÃO vai pro Compose (chamo o container direto, sem gambiarra).
+     */
+    private fun handlePairLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val data = intent.data ?: return
+        val info = com.mpx.player.data.parsePairPayload(data.toString()) ?: return
+        container.remote.connect(info.host, info.token)
     }
 }
 

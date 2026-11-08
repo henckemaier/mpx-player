@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mpx.player.BuildConfig
+import com.mpx.player.data.DiscoveredAgent
 import com.mpx.player.data.DownloadState
 import com.mpx.player.data.DownloadStatus
 import com.mpx.player.data.RemoteState
@@ -263,7 +264,8 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
 
         Section(7, "DESKTOP", "SYNC", open) { open = it }
         if (open == 7) SectionBody {
-            DesktopBody(desktop, onConnect = vm::connectDesktop, onDisconnect = vm::disconnectDesktop)
+            val discovered by vm.discovered.collectAsStateWithLifecycle()
+            DesktopBody(desktop, discovered, onConnect = vm::connectDesktop, onDisconnect = vm::disconnectDesktop)
         }
 
         Spacer(Modifier.height(4.dp))
@@ -279,7 +281,12 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
  * CONECTANDO / CONECTADO a <host> [N faixas] / ERRO. Pré-preenche o host/token já pareado.
  */
 @Composable
-private fun DesktopBody(st: RemoteState, onConnect: (String, String) -> Unit, onDisconnect: () -> Unit) {
+private fun DesktopBody(
+    st: RemoteState,
+    discovered: List<DiscoveredAgent>,
+    onConnect: (String, String) -> Unit,
+    onDisconnect: () -> Unit,
+) {
     val c = Mpx.colors
     var host by rememberSaveable(st.host) { mutableStateOf(st.host ?: "") }
     var token by rememberSaveable { mutableStateOf("") }
@@ -287,7 +294,27 @@ private fun DesktopBody(st: RemoteState, onConnect: (String, String) -> Unit, on
     val connected = st.status == RemoteStatus.CONNECTED
 
     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Txt("AGENTE NO PC (MESMA REDE WI-FI). IP:PORTA + TOKEN DO CONSOLE.", size = 10.sp, color = c.dim, maxLines = 2)
+        Txt("AGENTE NO PC (MESMA REDE WI-FI). LEIA O QR OU PREENCHA IP:PORTA + TOKEN.", size = 10.sp, color = c.dim, maxLines = 2)
+
+        // Descobertos por mDNS: tap preenche o IP:porta (o token segue colado/digitado).
+        if (!connected) {
+            if (discovered.isEmpty()) {
+                Txt("PROCURANDO AGENTES NA REDE...", size = 11.sp, color = c.dim)
+            } else {
+                Txt("DESCOBERTOS:", size = 10.sp, color = c.dim)
+                discovered.forEach { ag ->
+                    Row(
+                        Modifier.fillMaxWidth().height(40.dp).border(1.dp, c.line).tap { host = ag.endpoint }.padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Txt("▸ ${ag.name.uppercase()}", size = 11.sp)
+                        Txt(ag.endpoint, size = 11.sp, color = c.dim)
+                    }
+                }
+            }
+        }
+
         TerminalField("IP", "192.168.1.33:8080", host, enabled = !connecting) { host = it }
         TerminalField("TK", "cole o token aqui", token, enabled = !connecting) { token = it }
 
