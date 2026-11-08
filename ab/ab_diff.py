@@ -29,9 +29,10 @@
 #                          1-bit. Tetos PLACEHOLDER (calibrados no c3; masks so-titulo SE dominar).
 #   nowplaying-full (393x800) — NowPlayingScreen CHEIA (tela inteira: painel + VolumeRow + Console).
 #                          isPlaying=FALSE congela o Spectrum -> quase estatica; so os 2 blinkingCursor
-#                          (titulo + cmdlog) animam. Checks: ESTRUTURAL + GLOW (HALO real do titulo,
-#                          glow=true). SEM cover (GeneratedCover disc, cover=0 sincrono). Tetos
-#                          PLACEHOLDER (calibrados no c3; masks = 2 cursores conforme medicao).
+#                          (titulo + cmdlog) animam, e MEDIDO sao no-op (renderizam identico no frame 0).
+#                          Checks: ESTRUTURAL + GLOW (HALO real do titulo, glow=true). SEM cover
+#                          (GeneratedCover disc, cover=0 sincrono). Calibrado na fatia c3 (AE limpo=3730,
+#                          masks=[] familia eq/queue; title_roi apertado excluindo cursor+subtitulo).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -275,20 +276,41 @@ PROFILES = {
     # glow=true, Shadow blur 18f) — mesma sensibilidade de colapso-de-blur do 'nowplaying'/'settings',
     # NAO so presenca (nav/eq/queue).
     #
-    # MASKS = os 2 cursores (titulo + cmdlog). O "_" arranca em "_" nos dois lados no frame 0, mas o do
-    # TITULO e VT323 40sp glow=true -> o halo de AA pode divergir (mesma razao do par 'nowplaying', que
-    # mascara (167,230,187,242)); o da cmdlog e 11sp bloco accent solido. Decisao final (quais mascarar)
-    # + os tetos saem do c3, MEDINDO o clean AE no par real do CI. PLACEHOLDER folgado aqui (c2): o diff
-    # so vira gate duro quando o baseline landar; teto=clean*~1.5 e masks definidas no c3. Os 6 perfis
-    # anteriores seguem INTOCADOS byte-a-byte.
+    # CALIBRADO (fatia c3) com os numeros REAIS do par CI (run 42437302986, cd10639): ESTRUTURAL
+    # AE_CLEAN=3730 (masks=[]), GLOW dev=42 no ROI largo / dev=9 no ROI apertado. DECISAO DE MASCARA
+    # RESOLVIDA MEDINDO (nao por convencao): o despacho previa "masks = 2 cursores (titulo + cmdlog)",
+    # mas a medicao do par real PROVA que os cursores NAO sao fonte de divergencia:
+    #   masks=[]                 -> AE 3730
+    #   masks=[cursor do titulo] -> AE 3730  (efeito ZERO: o "_" do titulo arranca "_" nos DOIS lados
+    #                                         no frame 0 e renderiza identico; mascarar seria no-op)
+    #   masks=[2 cursores]       -> AE 3660  (o cmdlog so remove ~70px de TEXTO accent REAL adjacente,
+    #                                         NAO o cursor -> mascarar ESCONDERIA chrome de verdade)
+    # Logo masks=[] e a escolha HONESTA: o piso 3730 em 393x800 (~1.2%) e AA de texto PEQUENO ESPALHADO
+    # (InvertedBar, cover-meta, titulo, digitos do progress, linhas da CMD.LOG) — FAMILIA EQ(1728)/
+    # Queue(2721)/Library(810), pisos aceitos SEM mascara, NAO o texto-denso/stem-darkening do Settings
+    # (11052, que exigiu R-A). O proprio recorte do Maestro previa esse galho ("+ familia eq/queue se
+    # houver AA empilhado"); a medicao desempatou p/ ele. NAO inflamos, NAO escondemos. ESTRUTURAL
+    # ceiling = 3730*~1.5 = 5600.
+    #
+    # GLOW: title_roi APERTADO de (10,205,383,262) p/ (10,212,272,250) = "MIDNIGHT_PROTOCOL" + halo,
+    # EXCLUINDO o cursor "_" (a barra vai ate x~296, fora em x>272) e o subtitulo dosPath (12sp dim, em
+    # y>250) — MESMA logica do par 'nowplaying' painel (title_roi exclui o cursor, x<167). O NpTitle tem
+    # glow=true (Shadow blur 18f) -> este check cobra o HALO real (colapso-de-blur), nao so presenca.
+    # known-good dev=9 (ROI apertado). BOUND = 150 (PISO absoluto, mesma folga de EQ dev=2->150 e Queue
+    # dev=33->150; 9*1.5=14 flakaria no AA; titulo sumir/mover desvia MILHARES -> 150 pega com folga).
+    #
+    # A PROVA DE REGRESSAO (branch -TEMP: +12dp no padding do NowPlayingFullRenderTest -> a tela inteira
+    # desloca -> estrutural nas DEZENAS DE MILHARES, ~5-8x o teto 5600, enquanto os 6 anteriores PASSAM
+    # e Android verde) garante que o teto nao e frouxo. NUNCA inflar p/ encobrir layout. Os 7 baselines
+    # PNG seguem INTOCADOS byte-a-byte (ESP. nowplaying painel 1044/171/0); o c3 toca SO este dict.
     "nowplaying-full": {
         "w": 393, "h": 800,
         "tol": 32,
-        "ceiling": 30000,           # PLACEHOLDER folgado (c3: clean*~1.5, medido no par CI)
-        "masks": [],                # PLACEHOLDER (c3: os 2 cursores — titulo glow + cmdlog — conforme medicao)
-        "title_roi": (10, 205, 383, 262),  # banda do titulo NpTitle (glow=true, halo real) — c3 refina c/ o PNG
+        "ceiling": 5600,            # known-good CLEAN = 3730 (piso de AA espalhado, masks=[]); ~1.5x de folga
+        "masks": [],                # MEDIDO: os 2 cursores sao no-op (titulo efeito 0; cmdlog so esconderia texto real) -> piso de AA aceito SEM mascara (familia EQ/Queue)
+        "title_roi": (10, 212, 272, 250),  # "MIDNIGHT_PROTOCOL" + HALO, excluindo o cursor (x>272) e o subtitulo (y>250)
         "glow_t": 18,
-        "glow_bound": 30000,        # PLACEHOLDER folgado (c3: dev*~1.5 ou PISO, medido no par CI)
+        "glow_bound": 150,          # PISO absoluto (known-good dev=9); titulo sumir/mover desvia milhares -> pega com folga
         "cover": None,              # GeneratedCover disc (cover=0 sincrono) -> sem check COVER (nao e a capa 1-bit)
     },
 }
