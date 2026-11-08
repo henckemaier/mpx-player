@@ -10,7 +10,17 @@ import com.mpx.player.data.PlaylistRepository
 import com.mpx.player.data.SettingsRepository
 import com.mpx.player.shared.PlatformContext
 import com.mpx.player.shared.playback.AudioPlayer
+import com.mpx.player.shared.playback.IosEngineAudioPlayer
 import com.mpx.player.shared.playback.createAudioPlayer
+
+/**
+ * Flag de LAUNCH-TIME do backend de áudio do iOS. **OFF por padrão** → produção usa o
+ * `AVQueuePlayer` (`createAudioPlayer` → `IosAudioPlayer`), INTOCADO. Ligado, troca para o
+ * backend experimental `AVAudioEngine` (`IosEngineAudioPlayer`), que abre o caminho do grafo
+ * de áudio (pré-requisito do EQ-audível). É escolha de BUILD/LAUNCH — não há switch ao vivo;
+ * fica OFF até haver device p/ validar o áudio (o CI só prova compile/link/matemática, não som).
+ */
+private const val USE_ENGINE_BACKEND = false
 
 /**
  * Contêiner de dependências do iOS: fecha a frente nativa wirando as 5 deps do
@@ -20,15 +30,17 @@ import com.mpx.player.shared.playback.createAudioPlayer
  *  - [settings]/[playlists] → `NSUserDefaults`;
  *  - [library] → MPMediaQuery (7.3);
  *  - [lyrics] → busca online (LyricsApi);
- *  - [audioPlayer] → `createAudioPlayer(PlatformContext())` (AVFoundation; o `connect()`
- *    ativa a `AVAudioSession` .playback — não mexemos nisso aqui).
+ *  - [audioPlayer] → [USE_ENGINE_BACKEND] ? `IosEngineAudioPlayer` (AVAudioEngine, experimental,
+ *    OFF) : `createAudioPlayer(PlatformContext())` (AVFoundation/`AVQueuePlayer`, padrão; o
+ *    `connect()` ativa a `AVAudioSession` .playback — não mexemos nisso aqui).
  */
 class IosAppContainer : AppContainer {
     override val settings: SettingsRepository = IosSettingsRepository()
     override val library: LibraryRepository = IosLibraryRepository()
     override val lyrics: LyricsRepository = IosLyricsRepository()
     override val playlists: PlaylistRepository = IosPlaylistRepository()
-    override val audioPlayer: AudioPlayer = createAudioPlayer(PlatformContext())
+    override val audioPlayer: AudioPlayer =
+        if (USE_ENGINE_BACKEND) IosEngineAudioPlayer() else createAudioPlayer(PlatformContext())
 }
 
 /**
