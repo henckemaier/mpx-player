@@ -340,7 +340,7 @@ private fun DesktopBody(
                 filled = host.isNotBlank() && token.isNotBlank() && !connecting,
             ) { if (host.isNotBlank() && token.isNotBlank() && !connecting) onConnect(host.trim(), token.trim()) }
         }
-        Txt("QR CODE + DESCOBERTA AUTOMÁTICA VÊM DEPOIS.", size = 10.sp, color = c.dim, maxLines = 2)
+        Txt("TOQUE UM AGENTE DA LISTA, LEIA O QR, OU DIGITE IP:PORTA.", size = 10.sp, color = c.dim, maxLines = 2)
     }
 }
 
