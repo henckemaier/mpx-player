@@ -5,7 +5,7 @@
 # ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
 # espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# SEIS PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
+# SETE PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
 #   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
 #   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
@@ -27,6 +27,11 @@
 #                          GeneratedCover (disc) + fills da row-highlight + VARIAS rows de titulo
 #                          (texto pequeno empilhado). Checks: ESTRUTURAL + GLOW (presenca). SEM cover
 #                          1-bit. Tetos PLACEHOLDER (calibrados no c3; masks so-titulo SE dominar).
+#   nowplaying-full (393x800) — NowPlayingScreen CHEIA (tela inteira: painel + VolumeRow + Console).
+#                          isPlaying=FALSE congela o Spectrum -> quase estatica; so os 2 blinkingCursor
+#                          (titulo + cmdlog) animam. Checks: ESTRUTURAL + GLOW (HALO real do titulo,
+#                          glow=true). SEM cover (GeneratedCover disc, cover=0 sincrono). Tetos
+#                          PLACEHOLDER (calibrados no c3; masks = 2 cursores conforme medicao).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -59,7 +64,7 @@
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
 # Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
-#   perfil ∈ {nowplaying (default), library, settings, nav, eq, queue}.  O check COVER so roda se o perfil define cover.
+#   perfil ∈ {nowplaying (default), library, settings, nav, eq, queue, nowplaying-full}.  O check COVER so roda se o perfil define cover.
 #   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
@@ -254,6 +259,37 @@ PROFILES = {
         "glow_t": 18,
         "glow_bound": 150,          # PISO absoluto (known-good dev=33); album title sumir/mover desvia centenas+ -> pega com folga
         "cover": None,              # QUEUE usa GeneratedCover (disc, cover=0 sincrono), nao a capa 1-bit -> sem check COVER
+    },
+    # NowPlayingScreen CHEIA (tela inteira, retrato). 7o par A/B (P7 fatia nowplaying-cheia). Canvas
+    # ALTO (393x800): InvertedBar + NpCoverMeta(disc 128dp) + NpTitle(VT323 40sp glow=true) + NpProgress
+    # + NpTransport(6 botoes) + regiao do Console (Spectrum+Volume ao fundo + CMD.LOG colapsado por cima).
+    #
+    # INSIGHT (decisao do Maestro): com isPlaying=FALSE a tela fica QUASE ESTATICA no 1o frame — o
+    # Spectrum NAO roda tick (barras em repouso), o console nasce COLAPSADO (expand=0f) na aba CMD.LOG,
+    # o dialog fica FECHADO. Os UNICOS bits animados = os 2 blinkingCursor (titulo + cmdlog). COVER:
+    # Track sem art + cover=0 -> GeneratedCover(disc) SINCRONO (como Queue) -> SEM check COVER (nao e a
+    # capa 1-bit do par 'nowplaying' painel).
+    #
+    # DISTINTO do par 'nowplaying' (painel, 393x420): aqui e a TELA INTEIRA (+ VolumeRow + Console). O
+    # painel segue INTOCADO byte-a-byte (AE=1044). O GLOW aqui cobra o HALO real do titulo (NpTitle tem
+    # glow=true, Shadow blur 18f) — mesma sensibilidade de colapso-de-blur do 'nowplaying'/'settings',
+    # NAO so presenca (nav/eq/queue).
+    #
+    # MASKS = os 2 cursores (titulo + cmdlog). O "_" arranca em "_" nos dois lados no frame 0, mas o do
+    # TITULO e VT323 40sp glow=true -> o halo de AA pode divergir (mesma razao do par 'nowplaying', que
+    # mascara (167,230,187,242)); o da cmdlog e 11sp bloco accent solido. Decisao final (quais mascarar)
+    # + os tetos saem do c3, MEDINDO o clean AE no par real do CI. PLACEHOLDER folgado aqui (c2): o diff
+    # so vira gate duro quando o baseline landar; teto=clean*~1.5 e masks definidas no c3. Os 6 perfis
+    # anteriores seguem INTOCADOS byte-a-byte.
+    "nowplaying-full": {
+        "w": 393, "h": 800,
+        "tol": 32,
+        "ceiling": 30000,           # PLACEHOLDER folgado (c3: clean*~1.5, medido no par CI)
+        "masks": [],                # PLACEHOLDER (c3: os 2 cursores — titulo glow + cmdlog — conforme medicao)
+        "title_roi": (10, 205, 383, 262),  # banda do titulo NpTitle (glow=true, halo real) — c3 refina c/ o PNG
+        "glow_t": 18,
+        "glow_bound": 30000,        # PLACEHOLDER folgado (c3: dev*~1.5 ou PISO, medido no par CI)
+        "cover": None,              # GeneratedCover disc (cover=0 sincrono) -> sem check COVER (nao e a capa 1-bit)
     },
 }
 

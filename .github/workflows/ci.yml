@@ -164,6 +164,15 @@ jobs:
           else
             echo "::warning::PNG iOS (queue) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
           fi
+          # Parse do 7o PNG: "A/B nowplaying-full: PNG <n> B, escrito=<bool> em <path>" (NowPlaying-cheia)
+          PNG_NPFULL=$(grep -oE 'em (/[^ ]+nowplaying-full-ios\.png)' ab/ios-test.log | tail -1 | sed 's/^em //' || true)
+          echo "PNG iOS (nowplaying-full) resolvido: '$PNG_NPFULL'"
+          if [ -n "$PNG_NPFULL" ] && [ -f "$PNG_NPFULL" ]; then
+            cp "$PNG_NPFULL" ab/nowplaying-full-ios.png
+            echo "Render A/B iOS (nowplaying-full) copiado p/ ab/nowplaying-full-ios.png ($(stat -f%z ab/nowplaying-full-ios.png) bytes)"
+          else
+            echo "::warning::PNG iOS (nowplaying-full) do render offscreen nao localizado via stdout (ver ab/ios-test.log)."
+          fi
 
       # A/B PIXEL-DIFF (GATE DURO): compara o PNG-iOS do render offscreen com o baseline
       # Android commitado (ab/nowplaying-android.png), com MASCARA na faixa dinamica
@@ -230,6 +239,17 @@ jobs:
           else
             echo "::warning::baseline ab/queue-android.png ausente (captura coordenada pelo Bigorna) — diff do Queue PULADO nesta run. Vira gate duro quando o baseline for commitado."
           fi
+          # Par NowPlaying-cheia (perfil 'nowplaying-full': estrutural + glow do HALO do titulo, SEM
+          # cover) — GATE DURO assim que o baseline existir. MESMA cadencia dos outros: o baseline
+          # (ab/nowplaying-full-android.png) e um commit DELIBERADO coordenado pelo Bigorna (captura por
+          # adb na AbNowPlayingFullBaselineActivity). ENQUANTO nao existir, o diff e PULADO com
+          # ::warning:: (nao derruba o job). Quando o PNG entrar no repo, vira gate duro. Tetos
+          # placeholder do perfil 'nowplaying-full' = calibrados no c3 (masks = 2 cursores conforme medicao).
+          if [ -f ab/nowplaying-full-android.png ]; then
+            /tmp/abvenv/bin/python ab/ab_diff.py ab/nowplaying-full-android.png ab/nowplaying-full-ios.png nowplaying-full
+          else
+            echo "::warning::baseline ab/nowplaying-full-android.png ausente (captura coordenada pelo Bigorna) — diff do NowPlaying-cheia PULADO nesta run. Vira gate duro quando o baseline for commitado."
+          fi
 
       # A/B VISUAL (Lente): PNG-iOS-do-run (render offscreen determinístico, 1º frame) x baseline
       # Android commitado (ab/nowplaying-android.png), foco no blur do text-shadow. O pixel-diff
@@ -253,6 +273,8 @@ jobs:
             ab/eq-android.png
             ab/queue-ios.png
             ab/queue-android.png
+            ab/nowplaying-full-ios.png
+            ab/nowplaying-full-android.png
             ab/ios-test.log
           if-no-files-found: warn
 
