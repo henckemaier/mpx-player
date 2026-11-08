@@ -5,7 +5,7 @@
 # ImageComposeScene @ Density(1f)) com o BASELINE Android commitado (capturado 1x pela Activity
 # espelho no mesmo tamanho/densidade). Falha (exit 1) se divergirem.
 #
-# SETE PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
+# OITO PERFIS (o perfil escolhe tamanho, ROIs, máscaras e QUAIS checks rodam):
 #
 #   nowplaying (393x420) — NowPlayingPanel. Checks: ESTRUTURAL + GLOW + COVER.
 #   library    (393x600) — LibraryScreen (filtro PLAYLISTS, grade LazyVerticalGrid).
@@ -33,6 +33,10 @@
 #                          Checks: ESTRUTURAL + GLOW (HALO real do titulo, glow=true). SEM cover
 #                          (GeneratedCover disc, cover=0 sincrono). Calibrado na fatia c3 (AE limpo=3730,
 #                          masks=[] familia eq/queue; title_roi apertado excluindo cursor+subtitulo).
+#   boot       (393x800) — BootScreen (splash/BIOS, FRAME TERMINAL via stepOverride=6/barOverride=20 ->
+#                          LaunchedEffect nao roda, estado "ready" estatico). Checks: ESTRUTURAL + GLOW
+#                          (HALO do LOGO ascii, glow=true). SEM cover. So o cursor do "//PLAYER" anima
+#                          (provavelmente no-op). Tetos PLACEHOLDER (calibrados no c3; masks MEDINDO).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -65,7 +69,7 @@
 # POR QUE Pillow e NAO ImageMagick: roda IDENTICO local (calibragem) e no CI (gate) -> teto real.
 #
 # Uso: python3 ab/ab_diff.py <android.png> <ios.png> [perfil]
-#   perfil ∈ {nowplaying (default), library, settings, nav, eq, queue, nowplaying-full}.  O check COVER so roda se o perfil define cover.
+#   perfil ∈ {nowplaying (default), library, settings, nav, eq, queue, nowplaying-full, boot}.  O check COVER so roda se o perfil define cover.
 #   exit 0 = PASS (todos os checks do perfil)   exit 1 = FAIL (algum check, ou PNG ausente/forma errada)
 
 import sys
@@ -312,6 +316,34 @@ PROFILES = {
         "glow_t": 18,
         "glow_bound": 150,          # PISO absoluto (known-good dev=9); titulo sumir/mover desvia milhares -> pega com folga
         "cover": None,              # GeneratedCover disc (cover=0 sincrono) -> sem check COVER (nao e a capa 1-bit)
+    },
+    # BootScreen (splash/BIOS, FRAME TERMINAL). 8o par A/B (P7 fatia boot, o ULTIMO 4/4). Canvas ALTO
+    # (393x800): BootHeader (MPX BIOS + VER 1.0) + BootBranding (Panel @ECHO OFF... + LOGO ascii 6 linhas
+    # glow=true 13sp + "//PLAYER"+cursor display 24sp) + BootLog (Panel weight(1f): 6 linhas "> CHECK.."
+    # [OK]/[WAIT]/[NOPE] incl. "> INDEX 12.345 FILES" via fmtThousands + USER_PROFILE LOADED + SegmentBar
+    # (20,20) cheia + "100%") + BootButton "[ PRESS ENTER ]" filled + BootFooter.
+    #
+    # FRAME TERMINAL (decisao do Maestro): stepOverride=6 + barOverride=20 -> os LaunchedEffect NAO rodam
+    # (guard do c1) -> estado "ready" final, ESTATICO. O UNICO bit animado = o blinkingCursor do
+    # "//PLAYER" (display 24sp), que arranca "_" nos dois lados no frame 0 -> provavelmente no-op (como
+    # os cursores do npfull). COVER: Boot nao tem capa -> cover=None.
+    #
+    # GLOW: o LOGO ascii (6 linhas) e glow=true (Shadow blur 18f) -> o check cobra o HALO do LOGO
+    # (title_roi no bloco ascii, EXCLUINDO a linha "//PLAYER"+cursor abaixo — mesma logica do npfull que
+    # exclui cursor/subtitulo). MASKS: MEDE PRIMEIRO (a medicao e soberana, molde npfull/eq/queue). Se o
+    # cursor for no-op e o piso for AA de texto espalhado (header/log/footer) sem alvo mascaravel ->
+    # masks=[] honesto da familia eq/queue. PLACEHOLDER folgado aqui (c2): o diff so vira gate duro
+    # quando o baseline landar; teto=clean*~1.5 e masks definidas no c3. Os 7 perfis anteriores seguem
+    # INTOCADOS byte-a-byte.
+    "boot": {
+        "w": 393, "h": 800,
+        "tol": 32,
+        "ceiling": 30000,           # PLACEHOLDER folgado (c3: clean*~1.5, medido no par CI)
+        "masks": [],                # PLACEHOLDER (c3: cursor do "//PLAYER" so SE morder; provavelmente masks=[] familia)
+        "title_roi": (10, 170, 383, 260),  # bloco do LOGO ascii (glow=true, halo) — c3 refina c/ o PNG, excluindo "//PLAYER"
+        "glow_t": 18,
+        "glow_bound": 30000,        # PLACEHOLDER folgado (c3: dev*~1.5 ou PISO, medido no par CI)
+        "cover": None,              # Boot nao tem capa -> sem check COVER
     },
 }
 
