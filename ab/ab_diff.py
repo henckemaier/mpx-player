@@ -34,9 +34,11 @@
 #                          (GeneratedCover disc, cover=0 sincrono). Calibrado na fatia c3 (AE limpo=3730,
 #                          masks=[] familia eq/queue; title_roi apertado excluindo cursor+subtitulo).
 #   boot       (393x800) — BootScreen (splash/BIOS, FRAME TERMINAL via stepOverride=6/barOverride=20 ->
-#                          LaunchedEffect nao roda, estado "ready" estatico). Checks: ESTRUTURAL + GLOW
-#                          (HALO do LOGO ascii, glow=true). SEM cover. So o cursor do "//PLAYER" anima
-#                          (provavelmente no-op). Tetos PLACEHOLDER (calibrados no c3; masks MEDINDO).
+#                          LaunchedEffect nao roda, estado "ready" estatico). Checks: ESTRUTURAL (R-A:
+#                          MASCARA o LOGO ascii box-drawing — nao-equivalencia de raster de glifo, classe
+#                          do ♥ da Library) + GLOW (HALO do LOGO, glow=true). SEM cover. Par HIBRIDO
+#                          (nivel Settings 12845); calibrado na fatia c3 (OPCAO B: clean pos-mascara=8879,
+#                          SegmentBar+texto no estrutural honesto; cursor do "//PLAYER" no-op).
 #
 # As constantes/métrica do perfil `nowplaying` são IDÊNTICAS às da fatia anterior (byte-a-byte):
 # reorganizadas num dict de perfil, sem recalibrar nada do par que já está verde.
@@ -328,21 +330,48 @@ PROFILES = {
     # "//PLAYER" (display 24sp), que arranca "_" nos dois lados no frame 0 -> provavelmente no-op (como
     # os cursores do npfull). COVER: Boot nao tem capa -> cover=None.
     #
-    # GLOW: o LOGO ascii (6 linhas) e glow=true (Shadow blur 18f) -> o check cobra o HALO do LOGO
-    # (title_roi no bloco ascii, EXCLUINDO a linha "//PLAYER"+cursor abaixo — mesma logica do npfull que
-    # exclui cursor/subtitulo). MASKS: MEDE PRIMEIRO (a medicao e soberana, molde npfull/eq/queue). Se o
-    # cursor for no-op e o piso for AA de texto espalhado (header/log/footer) sem alvo mascaravel ->
-    # masks=[] honesto da familia eq/queue. PLACEHOLDER folgado aqui (c2): o diff so vira gate duro
-    # quando o baseline landar; teto=clean*~1.5 e masks definidas no c3. Os 7 perfis anteriores seguem
-    # INTOCADOS byte-a-byte.
+    # CALIBRADO (fatia c3, decisao OPCAO B do Maestro) com os numeros REAIS do par CI (run 42444594401,
+    # f222cf5): este par NAO e limpo (familia eq/queue) como o plano previa — saiu HIBRIDO (nivel
+    # Settings). clean AE masks=[] = 12845. DIAGNOSTICO (MEDIDO, local=CI; Bigorna revalidou identico):
+    #   - SEM shift global (exact-AE minimiza em dy=0 -> LAYOUT FIEL; nao ha cascata de deslocamento).
+    #   - LOGO ascii box-drawing (█╗═, glow=true): ~3966px, ~10x mais denso que um titulo VT323 normal
+    #     (o npfull era ~centenas) -> NAO-EQUIVALENCIA de raster/fallback de glifo box-drawing skiko x
+    #     Android, MESMA CLASSE do ♥ (U+2665) mascarado na Library. E o ALVO ISOLAVEL que eq/queue nao
+    #     tinham -> MASCARADO (um retangulo sobre o bloco de 6 linhas).
+    #   - SegmentBar CHEIA (20/20, y~461-474): ~3331px de rounding sub-pixel dos 20 segmentos = CHROME
+    #     EQUIVALENTE -> FICA no estrutural (mascara-la seria esconder chrome real; opcao C descartada).
+    #   - resto (header labels + branding dim + "//PLAYER" display + 6 linhas da CMD.LOG + footer):
+    #     ~5548px = piso de AA de texto denso (classe Settings) -> FICA no estrutural (piso honesto).
+    #   - cursor do "//PLAYER": no-op (arranca "_" identico nos 2 lados no frame 0, nao domina) -> NAO
+    #     entra nas masks.
+    # OPCAO B (vs A masks=[]/teto 19300 frouxo, descartada; vs C mask+SegBar que esconderia chrome): a
+    # mascara cirurgica do LOGO (a nao-equivalencia conhecida, precedente ♥ da Library / R-A do Settings)
+    # + calibragem HONESTA no resto. clean pos-mascara = 8879 -> ESTRUTURAL ceiling = 8879*~1.5 = 13300.
+    # A fidelidade do LOGO NAO fica sem gate: o GLOW cobra o halo (abaixo).
+    #
+    # GLOW: title_roi (10,152,383,242) = bloco do LOGO ascii + halo, EXCLUINDO a linha "//PLAYER"+cursor
+    # (display 24sp, em y>242). O LOGO e glow=true (Shadow blur 18f). known-good dev=842 (o box-drawing
+    # infla a lit-area LEGITIMAMENTE — e a mesma nao-equivalencia que o estrutural mascara; aqui ela NAO
+    # e mascarada, so tolerada pelo bound). BOUND = 842*~1.5 = 1300 (NAO o piso 150 dos pares limpos — o
+    # LOGO tem AA real; mas o LOGO sumir/mover desvia a lit-area em MILHARES -> 1300 morde com folga).
+    #
+    # A PROVA DE REGRESSAO (branch -TEMP: +12dp no padding do BootScreenRenderTest -> a tela inteira
+    # desloca -> estrutural bem acima de 13300 + glow acima de 1300, enquanto os 7 anteriores PASSAM e
+    # Android verde) garante que o teto nao e frouxo e e disjunto. NUNCA inflar p/ encobrir layout. Os 8
+    # baselines PNG seguem INTOCADOS byte-a-byte (os 7 antigos + boot-android.png); o c3 toca SO este dict.
     "boot": {
         "w": 393, "h": 800,
         "tol": 32,
-        "ceiling": 30000,           # PLACEHOLDER folgado (c3: clean*~1.5, medido no par CI)
-        "masks": [],                # PLACEHOLDER (c3: cursor do "//PLAYER" so SE morder; provavelmente masks=[] familia)
-        "title_roi": (10, 170, 383, 260),  # bloco do LOGO ascii (glow=true, halo) — c3 refina c/ o PNG, excluindo "//PLAYER"
+        "ceiling": 13300,           # known-good CLEAN pos-mascara do LOGO = 8879; ~1.5x de folga (hibrido nivel Settings)
+        "masks": [
+            (8, 148, 385, 246),     # LOGO ascii box-drawing (█╗═): nao-equivalencia de raster de glifo
+                                    # skiko x Android (~3966px, ~10x um titulo VT323; classe do ♥ da
+                                    # Library). A fidelidade do LOGO segue gateada pelo GLOW (halo).
+                                    # SegmentBar (chrome equivalente) e texto denso FICAM no estrutural.
+        ],
+        "title_roi": (10, 152, 383, 242),  # LOGO ascii + HALO, excluindo "//PLAYER"+cursor (y>242)
         "glow_t": 18,
-        "glow_bound": 30000,        # PLACEHOLDER folgado (c3: dev*~1.5 ou PISO, medido no par CI)
+        "glow_bound": 1300,         # known-good dev=842 (box-drawing infla a lit-area legit); ~1.5x; LOGO sumir/mover desvia milhares
         "cover": None,              # Boot nao tem capa -> sem check COVER
     },
 }
