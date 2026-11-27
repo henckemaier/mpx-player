@@ -99,7 +99,7 @@ class SyncManager(
             if (cancelRequested) { cancelled = true; break }
             _state.value = _state.value.copy(done = i)
             val rid = t.remoteId ?: continue
-            when (val r = downloadAndInsert(t, SyncLogic.fileNameFor(rid, t.mimeType))) {
+            when (val r = downloadAndInsert(t, SyncLogic.displayNameFor(rid, t.artist, t.title, t.mimeType))) {
                 is Outcome.Ok -> written[rid] = r.mediaId
                 Outcome.Fail -> failed++
                 Outcome.NoSpace -> noSpace = true
@@ -162,6 +162,12 @@ class SyncManager(
             val values = ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Audio.Media.MIME_TYPE, t.mimeType)
+                // O arquivo sincronizado (ex.: WAV) pode não ter tags: o MediaStore usa estes valores.
+                put(MediaStore.Audio.Media.TITLE, t.title)
+                t.artist.takeIf { it.isNotBlank() && !it.equals("<unknown>", ignoreCase = true) }
+                    ?.let { put(MediaStore.Audio.Media.ARTIST, it) }
+                t.album.takeIf { it.isNotBlank() && !it.equals("<unknown>", ignoreCase = true) }
+                    ?.let { put(MediaStore.Audio.Media.ALBUM, it) }
                 put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/MPX")
                 put(MediaStore.Audio.Media.IS_MUSIC, 1)
                 put(MediaStore.Audio.Media.IS_PENDING, 1)

@@ -67,8 +67,42 @@ object SyncLogic {
     /** Integridade: sem Content-Length (<0) aceita; com ele, os bytes gravados têm de bater exatamente. PURO. */
     fun sizeMatches(expected: Long, written: Long): Boolean = expected < 0 || expected == written
 
-    /** Nome do arquivo sincronizado: "<remoteId>.<ext>". PURO. */
-    fun fileNameFor(remoteId: String, mime: String): String = "$remoteId.${extForMime(mime)}"
+    private val FORBIDDEN_NAME_CHARS = "/\\:*?\"<>|".toSet()
+    private val WHITESPACE = Regex("\\s+")
+    private const val MAX_BASE_CHARS = 120
+
+    /** Remove / \ : * ? " < > | e controles, colapsa espaços e tira pontos/espaços das pontas. PURO. */
+    fun sanitizeNamePart(raw: String?): String {
+        if (raw == null) return ""
+        val cleaned = raw.map { if (it in FORBIDDEN_NAME_CHARS || Character.isISOControl(it)) ' ' else it }
+            .joinToString("")
+            .replace(WHITESPACE, " ")
+            .trim(' ', '.')
+        return cleaned
+    }
+
+    private fun String.takeCodePoints(max: Int): String =
+        if (length <= max) this else {
+            val end = if (Character.isHighSurrogate(this[max - 1])) max - 1 else max
+            substring(0, end).trimEnd()
+        }
+
+    private fun knownTag(s: String?): String? =
+        s?.trim()?.takeIf { it.isNotEmpty() && !it.equals("<unknown>", ignoreCase = true) }
+
+    /**
+     * DISPLAY_NAME legível do arquivo sincronizado: "Artista - Título [id8].ext" (sem artista:
+     * "Título [id8].ext"; id8 = 8 primeiros chars do remoteId, evita colisão). Sanitizado; se nada
+     * sobrar do artista/título, cai no remoteId ("<remoteId>.<ext>"). A dedup NÃO depende do nome. PURO.
+     */
+    fun displayNameFor(remoteId: String, artist: String?, title: String?, mime: String): String {
+        val ext = extForMime(mime)
+        val t = sanitizeNamePart(knownTag(title))
+        if (t.isEmpty()) return "$remoteId.$ext"
+        val a = sanitizeNamePart(knownTag(artist))
+        val base = (if (a.isEmpty()) t else "$a - $t").takeCodePoints(MAX_BASE_CHARS)
+        return "$base [${remoteId.take(8)}].$ext"
+    }
 
     // ---- wrappers sobre Track (finos; validados no device, pois Track carrega Uri) ----
 
