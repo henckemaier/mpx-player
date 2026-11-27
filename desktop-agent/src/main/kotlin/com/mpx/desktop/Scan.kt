@@ -65,7 +65,8 @@ fun formatFor(mime: String, ext: String): String = when {
 fun folderArtFile(file: File): File? {
     val dir = file.parentFile ?: return null
     val names = setOf("folder.jpg", "folder.jpeg", "folder.png", "cover.jpg", "cover.jpeg", "cover.png")
-    return dir.listFiles()?.firstOrNull { it.isFile && it.name.lowercase() in names }
+    // Capa que e symlink p/ fora da pasta da faixa nao e servida (nao vaza arquivo arbitrario).
+    return dir.listFiles()?.firstOrNull { it.isFile && it.name.lowercase() in names && isInsideRoot(dir, it) }
 }
 
 /**
@@ -77,8 +78,11 @@ class LibraryScanner(private val root: File, private val reader: TagReader) {
 
     fun scan(): List<LibraryEntry> {
         if (!root.isDirectory) return emptyList()
+        // NAO segue symlinks/junctions para fora do root: poda diretorios cujo caminho canonico
+        // sai do root e descarta arquivos (ou links de arquivo) que resolvem p/ fora.
         return root.walkTopDown()
-            .filter { it.isFile && it.extension.lowercase() in AUDIO_EXT }
+            .onEnter { it == root || isInsideRoot(root, it) }
+            .filter { it.isFile && it.extension.lowercase() in AUDIO_EXT && isInsideRoot(root, it) }
             .map { toEntry(it) }
             .sortedBy { it.dto.relPathHint.lowercase() }
             .toList()
