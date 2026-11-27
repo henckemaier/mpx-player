@@ -24,7 +24,7 @@ import java.io.File
 class AppContainer(val context: Context, val crashLog: CrashLog) {
     val settings = SettingsRepository(context)
     val overrides = OverrideRepository(context)
-    val remote = RemoteLibrarySource(settings)
+    val remote = RemoteLibrarySource(settings, crashLog)
     val discovery = DesktopDiscovery(context)
     val syncIndex = SyncIndex(context)
     val library = LibraryRepository(context, overrides, remote, syncIndex)

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Política de rede do MPX (desktop-sync).
+
+  O agente desktop fala HTTP em CLARO na LAN (/library, /stream, /art). Com targetSdk 35 o
+  Android bloqueia cleartext por padrão, então sem esta config o recurso não funciona em aparelho.
+
+  Por que o base-config PERMITE cleartext (trade-off documentado):
+  - O Network Security Config só casa <domain> por NOME exato ou sufixo de domínio; NÃO aceita
+    faixas/CIDR de IP. O agente é alcançado por IP literal de LAN arbitrário (192.168.x.y, 10.x,
+    172.16-31.x) digitado, vindo do QR ou do mDNS — impossível enumerar em <domain-config>.
+  - A opção "base-config=false + domain-config só p/ localhost, 10.0.2.2 e *.local" seria mais
+    restritiva, mas NÃO funciona com IP literal (o caso principal) — o recurso quebraria.
+
+  Mitigações (o que torna isso restrito na prática):
+  1) Gate no app: RemoteLibrarySource.doConnect só aceita host:porta de LAN validado por
+     parseLanHostPort (IPv4 privado/loopback, localhost, *.local); todas as URLs http:// do agente
+     derivam desse host. Nenhum outro código do app monta URL http://.
+  2) Os destinos públicos conhecidos do app ficam com cleartext PROIBIDO abaixo (HTTPS obrigatório),
+     então um erro de digitação "http://" para eles falha em vez de vazar em claro.
+  O yt-dlp (Python nativo) não passa por esta política.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Serviços públicos usados pelo app: só HTTPS. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">lrclib.net</domain>
+        <domain includeSubdomains="true">163.com</domain>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <domain includeSubdomains="true">youtube.com</domain>
+        <domain includeSubdomains="true">googlevideo.com</domain>
+    </domain-config>
+</network-security-config>

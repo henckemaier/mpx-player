@@ -147,7 +147,11 @@ fun mergeLibrary(local: List<Track>, remote: List<Track>): List<Track> =
  * (offline/timeout/401/parse-fail -> lista vazia + estado ERRO); nunca crasha o app. Persiste
  * host+token no sucesso (reconecta sozinho no próximo arranque).
  */
-class RemoteLibrarySource(private val settings: SettingsRepository) {
+class RemoteLibrarySource(
+    private val settings: SettingsRepository,
+    /** Log local p/ diagnóstico de falha de conexão (token mascarado). Null em testes. */
+    private val crashLog: CrashLog? = null,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -177,9 +181,23 @@ class RemoteLibrarySource(private val settings: SettingsRepository) {
         _state.value = RemoteState()
     }
 
-    private suspend fun doConnect(host: String, token: String) {
-        if (host.isBlank() || token.isBlank()) {
+    private suspend fun doConnect(rawHost: String, token: String) {
+        if (rawHost.isBlank() || token.isBlank()) {
             disconnect(); return
+        }
+        // Gate ÚNICO de destino: todas as URLs do agente (/library, /stream, /art, sync) derivam
+        // deste host. O tráfego é HTTP em claro, então só aceitamos IPv4 privado/loopback,
+        // localhost ou *.local, com porta (ver parseLanHostPort e network_security_config.xml).
+        val host = parseLanHostPort(rawHost)
+        if (host == null) {
+            _tracks.value = emptyList()
+            _state.value = RemoteState(RemoteStatus.ERROR, rawHost, 0, "USE IP:PORTA DA REDE LOCAL (EX.: 192.168.1.33:8080)")
+            return
+        }
+        if (!isValidPairToken(token)) {
+            _tracks.value = emptyList()
+            _state.value = RemoteState(RemoteStatus.ERROR, host, 0, "TOKEN INVÁLIDO")
+            return
         }
         _state.value = RemoteState(RemoteStatus.CONNECTING, host)
         val fetched = withContext(Dispatchers.IO) { runCatching { fetchLibrary(host, token) }.getOrNull() }
@@ -204,7 +222,12 @@ class RemoteLibrarySource(private val settings: SettingsRepository) {
         return out
     }
 
-    private fun httpGet(url: String, token: String): String? = runCatching {
+    /**
+     * GET autenticado no agente. Falha continua degradando para null (estado ERRO na UI), mas agora
+     * a causa vai para o log local (CFG > SOBRE > LOG ERROS) com o token MASCARADO: antes a exceção
+     * era engolida e "SEM RESPOSTA" escondia, p.ex., o bloqueio de cleartext do Android.
+     */
+    private fun httpGet(url: String, token: String): String? = try {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 6000
@@ -213,10 +236,22 @@ class RemoteLibrarySource(private val settings: SettingsRepository) {
             setRequestProperty("Accept", "application/json")
         }
         try {
-            if (conn.responseCode != 200) return null
-            conn.inputStream.bufferedReader().use { it.readText() }
+            val code = conn.responseCode
+            if (code != 200) {
+                logFailure(IllegalStateException("HTTP $code em $url"), token)
+                null
+            } else {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            }
         } finally {
             conn.disconnect()
         }
-    }.getOrNull()
+    } catch (e: Exception) {
+        logFailure(e, token)
+        null
+    }
+
+    private fun logFailure(e: Throwable, token: String) {
+        crashLog?.record("DESKTOP", sanitizeThrowable(e, token))
+    }
 }
