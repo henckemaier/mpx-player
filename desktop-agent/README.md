@@ -3,7 +3,7 @@
 Conector leve no PC (Windows) que escaneia uma pasta de músicas e serve a biblioteca para o
 celular, via HTTP na LAN. Módulo Kotlin/JVM **isolado** (irmão do `:app`; o `:app` **não**
 depende dele). Servidor **Ktor CIO**; stream com **Range/206** (plugin `PartialContent`);
-tudo atrás de **token**; bind **LAN-only** (nunca `0.0.0.0`).
+tudo atrás de **token**; bind **LAN-only** por padrão (ver **Segurança**).
 
 ## Rodar (dev, sem empacotar)
 
@@ -16,6 +16,26 @@ tudo atrás de **token**; bind **LAN-only** (nunca `0.0.0.0`).
 No arranque o agente imprime o **TOKEN** (aleatório por execução) e a **URL da LAN**
 (`http://<ip-site-local>:<porta>`). O IP é o 1º IPv4 **site-local** (`isSiteLocalAddress`,
 não-loopback) detectado; com várias interfaces ele loga todas e usa a 1ª (override: `--host`).
+
+## Segurança (leia antes de usar)
+
+- **Tráfego em HTTP CLARO, sem TLS.** Qualquer um na mesma rede que consiga capturar pacotes
+  (Wi-Fi público/compartilhado, rede comprometida) vê o áudio, a biblioteca e o token.
+- **O token vai na query string** (`/stream?token=...`, necessário para players que não enviam
+  header) e pode aparecer em logs de roteadores/proxies e no histórico de ferramentas. É uma
+  limitação conhecida; prefira `Authorization: Bearer` quando o cliente permitir.
+- **Use só em rede confiável** (sua LAN doméstica). Não exponha a porta na internet nem via
+  port-forward.
+- **`--host 0.0.0.0` expõe o agente em TODAS as interfaces** (Wi-Fi, Ethernet, VPN, hotspot...).
+  O padrão é o 1º IPv4 site-local (LAN). Se você forçar um bind curinga (`0.0.0.0`/`::`), o
+  agente imprime um `WARNING` no console.
+- **Token**: aleatório por execução, comparado em **tempo constante**. Após **10 falhas em 60 s**
+  o IP de origem recebe **429** (com `Retry-After`) por 60 s.
+- **Erros 500** retornam só `500 internal error`; o detalhe fica no log local do agente.
+- **Escopo de arquivos**: `/stream` e `/art` só servem arquivos **indexados** no scan (id =
+  hash do caminho relativo; não há acesso por caminho). O scan **não segue symlinks/junctions
+  para fora da pasta raiz** (comparação por caminho canônico), e capas `folder/cover.*` que
+  apontam para fora da pasta da faixa são ignoradas.
 
 ## Contrato (DTO servido — fixo para a sub-2)
 
