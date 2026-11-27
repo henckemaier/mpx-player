@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.PrintWriter
+import java.io.RandomAccessFile
 import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,9 +60,12 @@ class CrashLog(
     fun record(tag: String, error: Throwable, thread: String? = null) {
         runCatching {
             dir.mkdirs()
-            val entry = format(tag, error, clock(), header, thread, maxEntryChars)
+            var entry = format(tag, error, clock(), header, thread, maxEntryChars)
             val bytes = entry.toByteArray(Charsets.UTF_8).size
             if (file.exists() && file.length() + bytes > maxBytes) rotate()
+            // Arquivo truncado (kill no meio da escrita) ou com lixo sem "\n" no fim: sem isto o
+            // título do novo registro grudaria na última linha e não seria contado.
+            if (!endsWithNewline(file)) entry = "\n" + entry
             file.appendText(entry, Charsets.UTF_8)
             refresh()
         }
@@ -90,6 +94,14 @@ class CrashLog(
         runCatching { rotatedFile.delete() }
         runCatching { exportFile.delete() }
         refresh()
+    }
+
+    private fun endsWithNewline(f: File): Boolean {
+        if (!f.exists() || f.length() == 0L) return true
+        return RandomAccessFile(f, "r").use { raf ->
+            raf.seek(raf.length() - 1)
+            raf.read() == '\n'.code
+        }
     }
 
     private fun rotate() {
@@ -138,6 +150,9 @@ class CrashLog(
                 append(stack.trimEnd())
             }
             if (body.length > maxChars) body = body.take(maxChars) + "\n" + TRUNCATED_MARK
+            // Só o título pode começar com ENTRY_MARK: uma mensagem multilinha (o stack trace a repete
+            // inteira) com linha "===== ..." seria contada como registro extra. Indenta essas linhas.
+            body = body.lineSequence().joinToString("\n") { if (it.startsWith(ENTRY_MARK)) " $it" else it }
             return title + "\n" + body + "\n\n"
         }
     }
