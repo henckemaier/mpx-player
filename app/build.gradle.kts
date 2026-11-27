@@ -47,6 +47,18 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
+        // Build de QA: MESMO R8/minify/shrink da release, mas com applicationId ".qa" para instalar
+        // LADO A LADO com o app do usuário (sem desinstalar nem tocar nos dados dele). Assinado com a
+        // debug keystore. Não altera o applicationId nem a assinatura da release real.
+        // Gerar: ./gradlew :app:assembleQa  ->  app/build/outputs/apk/qa/app-qa.apk
+        create("qa") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            resValue("string", "app_name", "MPX QA")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
