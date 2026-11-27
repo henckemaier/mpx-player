@@ -60,6 +60,10 @@ android {
             resValue("string", "app_name", "MPX QA")
         }
     }
+    lint {
+        // Baseline: erros pre-existentes ficam registrados; novos problemas falham o CI.
+        baseline = file("lint-baseline.xml")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
