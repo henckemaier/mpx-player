@@ -89,5 +89,6 @@ que roda standalone. QR/mDNS (descoberta automática) = sub-3.
   `429 Too Many Requests` por 60 s; erros `500` respondem corpo genérico (detalhe só no console,
   sem a query/token); o scan não segue symlinks/junctions para fora da pasta escolhida e só serve
   arquivos indexados (sem path traversal por id).
-- **No app:** o MPX só conecta a IP de rede privada/loopback (e confirma o pareamento por QR/link
-  antes de salvar o token, que fica fora do backup do Android).
+- **No app:** o MPX só conecta a **IPv4 literal** de rede privada/loopback (nomes como `pc.local`
+  não são aceitos — use o IP que o agente imprime/QR), confirma o pareamento por QR/link antes de
+  salvar o token (que fica fora do backup do Android) e não segue redirects do agente.

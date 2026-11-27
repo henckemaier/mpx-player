@@ -14,7 +14,6 @@ class PairPayloadTest {
     @Test fun `payload valido do agente`() {
         assertEquals(PairInfo("192.168.1.33:8080", tk), parsePairPayload("mpx://pair?v=1&h=192.168.1.33:8080&t=$tk"))
         assertEquals(PairInfo("10.0.2.2:8080", tk), parsePairPayload("  mpx://pair?t=$tk&v=1&h=10.0.2.2:8080  "))
-        assertEquals(PairInfo("meu-pc.local:8080", tk), parsePairPayload("mpx://pair?v=1&h=Meu-PC.local:8080&t=$tk"))
     }
 
     @Test fun `estrutura invalida`() {
@@ -39,6 +38,8 @@ class PairPayloadTest {
             "192.168.1.2.evil.com:80",         // sufixo público
             "evil.local.com:80",               // .local no meio
             "%31%39%32.168.1.2:80",            // percent-encoding
+            "evil.local:80",                   // nome mDNS: resolveria por DNS unicast (rebinding)
+            "localhost:8080",                  // nome: so IP literal
         ).forEach { h -> assertNull("h=$h", parsePairPayload("mpx://pair?v=1&h=$h&t=$tk")) }
     }
 
@@ -54,7 +55,7 @@ class PairPayloadTest {
     }
 
     @Test fun `faixas de IPv4 privadas e loopback`() {
-        listOf("10.0.0.1", "10.255.255.255", "127.0.0.1", "172.16.0.1", "172.31.255.255", "192.168.0.1", "localhost")
+        listOf("10.0.0.1", "10.255.255.255", "127.0.0.1", "172.16.0.1", "172.31.255.255", "192.168.0.1")
             .forEach { assertTrue(it, isLanHost(it)) }
         listOf("172.15.0.1", "172.32.0.1", "192.169.0.1", "11.0.0.1", "0.0.0.0", "255.255.255.255", "169.254.1.1", "1.1.1.1")
             .forEach { assertFalse(it, isLanHost(it)) }
@@ -65,13 +66,11 @@ class PairPayloadTest {
             .forEach { assertFalse(it, isLanHost(it)) }
     }
 
-    @Test fun `nomes local`() {
-        assertTrue(isLanHost("pc.local"))
-        assertTrue(isLanHost("estudio.casa.local"))
-        assertFalse(isLanHost(".local"))
-        assertFalse(isLanHost("-pc.local"))
-        assertFalse(isLanHost("pc_x.local"))
-        assertFalse(isLanHost("local"))
+    @Test fun `nomes sao rejeitados - so IPv4 literal (sem DNS, sem rebinding)`() {
+        listOf("localhost", "pc.local", "estudio.casa.local", "LOCALHOST", "router.lan", "local", "ip6-localhost")
+            .forEach { assertFalse(it, isLanHost(it)) }
+        assertNull(parseLanHostPort("pc.local:8080"))
+        assertNull(parseLanHostPort("localhost:8080"))
     }
 
     @Test fun `porta obrigatoria e na faixa`() {
@@ -87,7 +86,7 @@ class PairPayloadTest {
         assertNull(parseLanHostPort("::1:8080"))
     }
 
-    @Test fun `normaliza para minusculas e corta espacos externos`() {
-        assertEquals("pc.local:8080", parseLanHostPort("  PC.LOCAL:8080 "))
+    @Test fun `corta espacos externos`() {
+        assertEquals("192.168.1.2:8080", parseLanHostPort("  192.168.1.2:8080 "))
     }
 }

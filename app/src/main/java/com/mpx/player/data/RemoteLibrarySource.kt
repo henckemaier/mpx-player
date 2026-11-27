@@ -164,6 +164,7 @@ class RemoteLibrarySource(
     init {
         // Reconecta ao agente pareado no arranque (se houver host/token salvos).
         scope.launch {
+            runCatching { settings.purgeLegacyPairing() } // token antigo fora do arquivo com backup
             val s = settings.settings.first()
             val h = s.desktopHost
             val t = s.desktopToken
@@ -186,8 +187,8 @@ class RemoteLibrarySource(
             disconnect(); return
         }
         // Gate ÚNICO de destino: todas as URLs do agente (/library, /stream, /art, sync) derivam
-        // deste host. O tráfego é HTTP em claro, então só aceitamos IPv4 privado/loopback,
-        // localhost ou *.local, com porta (ver parseLanHostPort e network_security_config.xml).
+        // deste host. O tráfego é HTTP em claro, então só aceitamos IPv4 LITERAL privado/loopback
+        // com porta — sem nomes/DNS (ver parseLanHostPort e network_security_config.xml).
         val host = parseLanHostPort(rawHost)
         if (host == null) {
             _tracks.value = emptyList()
@@ -229,6 +230,7 @@ class RemoteLibrarySource(
      */
     private fun httpGet(url: String, token: String): String? = try {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false // nunca seguir redirect do agente (levaria o token)
             requestMethod = "GET"
             connectTimeout = 6000
             readTimeout = 6000

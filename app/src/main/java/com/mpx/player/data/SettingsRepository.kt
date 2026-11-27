@@ -15,6 +15,7 @@ import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.theme.CUSTOM_THEME
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "config_sys")
@@ -113,6 +114,18 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLrcTree(v: String?) = context.dataStore.edit { if (v == null) it.remove(K.lrcTree) else it[K.lrcTree] = v }
     suspend fun setLastScan(v: Long) = context.dataStore.edit { it[K.lastScan] = v }
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
+
+    /**
+     * Pré-releases guardavam ds_host/ds_token no "config_sys", que VAI para o backup. Remove essas
+     * chaves legadas (idempotente; o pareamento novo vive em "ds_pairing", fora do backup).
+     */
+    suspend fun purgeLegacyPairing() {
+        val legacyHost = stringPreferencesKey("ds_host")
+        val legacyToken = stringPreferencesKey("ds_token")
+        if (context.dataStore.data.first().let { it.contains(legacyHost) || it.contains(legacyToken) }) {
+            context.dataStore.edit { it.remove(legacyHost); it.remove(legacyToken) }
+        }
+    }
 
     /** Grava (ou limpa, com null) o agente desktop pareado numa única escrita. */
     suspend fun setDesktop(host: String?, token: String?) = context.pairingStore.edit {

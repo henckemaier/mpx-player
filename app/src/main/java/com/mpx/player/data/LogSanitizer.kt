@@ -10,6 +10,8 @@ fun maskSecrets(text: String, vararg secrets: String): String {
     for (sec in secrets) if (sec.length >= 4) s = s.replace(sec, "***")
     s = s.replace(Regex("""(?i)([?&](?:token|t)=)[^&\s#"'<>]+"""), "$1***")
     s = s.replace(Regex("""(?i)(Bearer\s+)[^\s"'<>]+"""), "$1***")
+    // URL-encoded (ex.: dentro de outro parâmetro/redirect): %3Ftoken%3D... / %26t%3D...
+    s = s.replace(Regex("""(?i)((?:%3F|%26)(?:token|t)%3D)[^&\s"'<>%]+"""), "$1***")
     return s
 }
 

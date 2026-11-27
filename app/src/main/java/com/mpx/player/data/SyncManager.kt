@@ -66,7 +66,23 @@ class SyncManager(
         data object Cancelled : Outcome
     }
 
+    /**
+     * Executa o sync. Nenhuma exceção pode escapar do scope (não há handler) nem deixar
+     * `running = true` preso na UI: erro vira resultado "ERRO NO SYNC" e o estado é sempre liberado.
+     */
     private suspend fun runSync(favoritasRemotas: List<Track>) {
+        try {
+            runSyncInner(favoritasRemotas)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.value = SyncState(result = "ERRO NO SYNC: ${e.javaClass.simpleName}")
+        } finally {
+            if (_state.value.running) _state.value = _state.value.copy(running = false)
+        }
+    }
+
+    private suspend fun runSyncInner(favoritasRemotas: List<Track>) {
         val diff = SyncLogic.syncDiff(favoritasRemotas, index.index.value)
         // remoteId do servidor só vira nome de arquivo se for seguro; os inválidos contam como erro.
         val todo = diff.filter { SyncLogic.isSafeRemoteId(it.remoteId) }
@@ -124,11 +140,14 @@ class SyncManager(
      * Baixa o /stream (Uri da sub-2, com ?token=) e grava via MediaStore scoped (molde Downloader).
      * Confere espaço livre ANTES de inserir e Content-Length x bytes gravados DEPOIS; qualquer falha,
      * divergência ou cancelamento apaga a entrada pendente (nunca fica faixa parcial).
+     * Sem Content-Length (agente não informou): o espaço é checado com margem fixa de 128 MB e a
+     * comparação de tamanho é pulada — só falha de leitura/escrita detecta truncamento nesse caso.
      */
     private fun downloadAndInsert(t: Track, fileName: String): Outcome {
         val resolver = context.contentResolver
         val conn = runCatching {
             (URL(t.uri.toString()).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false // redirect levaria o ?token= para outro host
                 connectTimeout = 10_000
                 readTimeout = 30_000
             }

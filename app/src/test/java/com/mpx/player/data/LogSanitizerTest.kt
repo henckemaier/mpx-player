@@ -41,6 +41,23 @@ class LogSanitizerTest {
         assertFalse("o registro final do CrashLog nao pode conter o token", formatted.contains(tk))
     }
 
+    @Test fun `CrashLog format mascara excecao CRUA (FATAL, Downloader) sem sanitize previo`() {
+        val raw = RuntimeException(
+            "falhou http://192.168.1.2:8080/stream/a?token=$tk",
+            java.io.IOException("Authorization: Bearer $tk; redirect=http%3A%2F%2Fx%3Ftoken%3D$tk"),
+        )
+        val out = CrashLog.format("FATAL", raw, 0L)
+        assertFalse("titulo/corpo nao podem conter o token", out.contains(tk))
+        assertTrue(out.lineSequence().first().contains("?token=***"))
+        assertTrue(out.contains("Bearer ***"))
+        assertTrue(out.contains("%3Ftoken%3D***"))
+    }
+
+    @Test fun `mascara token url-encoded`() {
+        assertEquals("u=http%3A%2F%2Fh%3Ftoken%3D***%26a%3D1", maskSecrets("u=http%3A%2F%2Fh%3Ftoken%3D$tk%26a%3D1"))
+        assertEquals("x%26t%3D***", maskSecrets("x%26t%3D$tk"))
+    }
+
     @Test fun `causa ciclica nao trava`() {
         val a = IOException("a?token=$tk"); val b = IOException("b", a); a.initCause(b)
         assertFalse(CrashLog.format("X", sanitizeThrowable(a, tk), 0L).contains(tk))

@@ -104,6 +104,7 @@ class CoverArtLoader(private val context: Context) {
         if (id in missing) return@withContext null
         val bytes = runCatching {
             val conn = (URL(artUri.toString()).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false // capa do agente: redirect levaria o ?token= p/ outro host
                 requestMethod = "GET"
                 connectTimeout = 6000
                 readTimeout = 6000

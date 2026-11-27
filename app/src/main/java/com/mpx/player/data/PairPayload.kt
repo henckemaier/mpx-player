@@ -40,11 +40,15 @@ fun isValidPairToken(token: String): Boolean =
  * Valida e normaliza um endereço "host:porta" do agente desktop, aceitando SÓ destinos de rede
  * local — o tráfego com o agente é HTTP em claro (ver res/xml/network_security_config.xml), então o
  * app se recusa a falar com qualquer outra coisa:
- *  - IPv4 privado (10/8, 172.16/12, 192.168/16) ou loopback (127/8; inclui 10.0.2.2 do emulador);
- *  - `localhost` ou nome mDNS `*.local` (rótulos [A-Za-z0-9-], 1..63);
+ *  - IPv4 LITERAL privado (10/8, 172.16/12, 192.168/16) ou loopback (127/8; 10.0.2.2 do emulador
+ *    está em 10/8);
  *  - porta obrigatória 1..65535.
- * Rejeita (null): userinfo (`user@host`), `/`, `?`, `#`, espaços, IPv6, IPs públicos, porta ausente,
- * zero, não numérica ou fora da faixa. Retorna "host:porta" (host em minúsculas).
+ * NOMES (inclusive `localhost` e `*.local`) são rejeitados de propósito: o Android não resolve mDNS
+ * via getaddrinfo, então `x.local` só resolveria por DNS unicast — e quem controla o DNS poderia
+ * apontá-lo para um IP público (ou trocar depois do pareamento: DNS rebinding) e receber token e
+ * áudio em claro. O QR do agente e a descoberta (NsdManager) já entregam o IP literal.
+ * Rejeita (null): userinfo (`user@host`), `/`, `?`, `#`, espaços, IPv6, nomes, IPs públicos, porta
+ * ausente, zero, não numérica ou fora da faixa. Retorna "a.b.c.d:porta".
  */
 fun parseLanHostPort(raw: String): String? {
     val s = raw.trim()
@@ -61,23 +65,13 @@ fun parseLanHostPort(raw: String): String? {
     return "$host:$port"
 }
 
-/** True se [host] (sem porta) é IPv4 privado/loopback, `localhost` ou `*.local`. Ver [parseLanHostPort]. */
+/** True se [host] (sem porta) é um IPv4 LITERAL privado ou loopback. Nomes: false. Ver [parseLanHostPort]. */
 fun isLanHost(host: String): Boolean {
-    val h = host.lowercase()
-    if (h == "localhost") return true
-    ipv4Octets(h)?.let { o ->
-        return o[0] == 10 ||
-            o[0] == 127 ||
-            (o[0] == 172 && o[1] in 16..31) ||
-            (o[0] == 192 && o[1] == 168)
-    }
-    if (h.endsWith(".local")) {
-        val labels = h.removeSuffix(".local").split('.')
-        return labels.all { l ->
-            l.length in 1..63 && l.first() != '-' && l.last() != '-' && l.all { it in 'a'..'z' || it in '0'..'9' || it == '-' }
-        }
-    }
-    return false
+    val o = ipv4Octets(host) ?: return false
+    return o[0] == 10 ||
+        o[0] == 127 ||
+        (o[0] == 172 && o[1] in 16..31) ||
+        (o[0] == 192 && o[1] == 168)
 }
 
 /** "a.b.c.d" com 4 octetos decimais 0..255 (sem zeros à esquerda ambíguos) -> octetos, senão null. */
