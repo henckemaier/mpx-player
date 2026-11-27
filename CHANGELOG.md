@@ -5,6 +5,19 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-27
+
+### Corrigido
+- **Crash ao baixar** músicas ou playlists (release): o app fechava ao iniciar o yt-dlp, na primeira
+  vez que o motor era preparado. Causa: a minificação do build de release removia classes que o
+  extrator de arquivos usa internamente. Corrigido.
+- Falhas de download agora aparecem como **erro** na tela, em vez de fechar o app.
+- Após um erro, o app guarda um **log local** de falhas (nada é enviado para fora do aparelho).
+
+### Adicionado
+- Em **CFG → SOBRE**: **LOG ERROS** (ver o log), **COMPARTILHAR** (enviar o log por outro app) e
+  **LIMPAR** (apagar o log).
+
 ## [1.6.0] - 2026-10-31
 
 ### Adicionado
