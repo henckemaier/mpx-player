@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -123,7 +124,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun updateEq(transform: (EqSettings) -> EqSettings) = context.dataStore.edit { p ->
-        val cur = p.toSettings().eq
+        val cur = p.toSettings(emptyPreferences()).eq
         val n = transform(cur)
         p[K.eqOn] = n.enabled
         p[K.eqPreset] = n.preset
