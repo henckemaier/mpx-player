@@ -42,7 +42,10 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mpx.player.data.PairInfo
+import com.mpx.player.data.parsePairPayload
 import com.mpx.player.model.UserSettings
+import com.mpx.player.ui.screens.PairConfirmDialog
 import com.mpx.player.ui.EqViewModel
 import com.mpx.player.ui.LibraryViewModel
 import com.mpx.player.ui.PlayerUi
@@ -83,9 +86,24 @@ class MainActivity : ComponentActivity() {
         handlePairLink(intent) // deep-link mpx://pair no cold start
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
-            MpxTheme(settings) { MpxRoot(container, settings) }
+            MpxTheme(settings) {
+                MpxRoot(container, settings)
+                pendingPair?.let { info ->
+                    PairConfirmDialog(
+                        info,
+                        onConfirm = {
+                            pendingPair = null
+                            container.remote.connect(info.host, info.token)
+                        },
+                        onDismiss = { pendingPair = null },
+                    )
+                }
+            }
         }
     }
+
+    /** Pareamento vindo do deep-link aguardando confirmação do usuário (null = nada pendente). */
+    private var pendingPair by mutableStateOf<PairInfo?>(null)
 
     override fun onStart() {
         super.onStart()
@@ -99,15 +117,17 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Deep-link de pareamento: lê a câmera/leitor do sistema abriu mpx://pair?... -> parseia (puro)
-     * -> auto-conecta ao agente (reusa o fluxo da sub-2; prefill do host aparece na tela Conectar).
-     * Sem câmera no app; a Uri NÃO vai pro Compose (chamo o container direto, sem gambiarra).
+     * Deep-link de pareamento: o leitor de QR do sistema abriu mpx://pair?... -> parseia e VALIDA
+     * (puro: host:porta só de LAN, token no formato do agente) -> pede CONFIRMAÇÃO ("Parear com
+     * <host>?") antes de conectar/persistir. O filtro é BROWSABLE, então qualquer página ou QR pode
+     * disparar o link: nunca auto-conectar. Payload inválido é ignorado em silêncio.
      */
     private fun handlePairLink(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
         val data = intent.data ?: return
-        val info = com.mpx.player.data.parsePairPayload(data.toString()) ?: return
-        container.remote.connect(info.host, info.token)
+        // Consome o intent: recriar a Activity não repete o pedido de pareamento.
+        setIntent(Intent(this, MainActivity::class.java))
+        pendingPair = parsePairPayload(data.toString()) ?: return
     }
 }
 
