@@ -1,15 +1,33 @@
 name: Release APK
 
-# Compila o APK de release assinado e publica/atualiza a GitHub Release vX.Y a cada push na main.
+# Compila o APK de release assinado e publica a GitHub Release v<versionName> a cada push na main.
 # Requer os secrets do repositório: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD.
+#
+# GUARDA: se a tag v<versionName> JÁ EXISTE no remoto, a execução NÃO compila nem publica nada
+# (aviso no log e no resumo, sem falhar). Uma release publicada nunca é sobrescrita — antes, pushes
+# de docs na main republicavam o APK da mesma versão em silêncio. Para lançar, suba o versionName
+# (veja RELEASING.md).
+#
+# O mapping.txt do R8 de cada release vai junto como asset (mapping-v<versionName>.txt) e como
+# artefato do workflow: sem ele não dá para desofuscar stack traces de crash do APK publicado.
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run: compila e guarda os artefatos, mas NÃO cria/publica a Release"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+
+# Duas execuções nunca publicam ao mesmo tempo (a 2ª espera a 1ª e então vê a tag já criada).
+concurrency:
+  group: release-apk
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -17,16 +35,58 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lê versionName
+        id: ver
+        run: |
+          version="$(grep -oP '^\s*versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "::error title=versionName não encontrado::Não consegui ler versionName de app/build.gradle.kts"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Guarda — a tag da versão já existe?
+        id: guard
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          # --exit-code: 0 = tag existe, 2 = não existe; qualquer outro código = erro (falha
+          # fechada: na dúvida, não publica).
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            msg="A tag $TAG já existe no remoto: build e publicação PULADOS; a Release $TAG e o APK dela NÃO foram alterados. Para lançar uma nova versão, suba versionName/versionCode em app/build.gradle.kts (ver RELEASING.md)."
+            echo "::notice title=Release $TAG já publicada — nada a fazer::$msg"
+            {
+              echo "## ⏭️ Release $TAG não publicada"
+              echo
+              echo "$msg"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$rc" -eq 2 ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "A tag $TAG não existe: segue para build e publicação."
+          else
+            echo "::error title=Falha ao consultar tags::git ls-remote retornou $rc; abortando sem publicar."
+            exit "$rc"
+          fi
+
       - name: Set up JDK 17
+        if: steps.guard.outputs.exists == 'false'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle
+        if: steps.guard.outputs.exists == 'false'
         uses: gradle/actions/setup-gradle@v4
 
       - name: Restaura keystore e credenciais (dos secrets)
+        if: steps.guard.outputs.exists == 'false'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.jks
           cat > keystore.properties <<EOF
@@ -37,22 +97,45 @@ jobs:
           EOF
 
       - name: Build release assinado
+        if: steps.guard.outputs.exists == 'false'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Lê versionName
-        id: ver
-        run: echo "version=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+      - name: Renomeia o APK e o mapping com a versão
+        if: steps.guard.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "mpx-player-v$VERSION.apk"
+          cp app/build/outputs/mapping/release/mapping.txt "mapping-v$VERSION.txt"
+          sha256sum "mpx-player-v$VERSION.apk" "mapping-v$VERSION.txt"
 
-      - name: Renomeia o APK com a versão
-        run: cp app/build/outputs/apk/release/app-release.apk "mpx-player-v${{ steps.ver.outputs.version }}.apk"
+      - name: Guarda APK + mapping como artefato do workflow
+        if: steps.guard.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-v${{ steps.ver.outputs.version }}
+          path: |
+            mpx-player-v${{ steps.ver.outputs.version }}.apk
+            mapping-v${{ steps.ver.outputs.version }}.txt
+          if-no-files-found: error
+          retention-days: 90
 
-      - name: Publica/atualiza a Release
+      - name: Publica a Release (APK + mapping)
+        if: steps.guard.outputs.exists == 'false' && !inputs.dry_run
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: MPX Player v${{ steps.ver.outputs.version }}
-          files: mpx-player-v${{ steps.ver.outputs.version }}.apk
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: MPX Player ${{ steps.ver.outputs.tag }}
+          files: |
+            mpx-player-v${{ steps.ver.outputs.version }}.apk
+            mapping-v${{ steps.ver.outputs.version }}.txt
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+      - name: Resumo (dry-run)
+        if: steps.guard.outputs.exists == 'false' && inputs.dry_run
+        run: |
+          echo "::notice title=Dry-run::Build OK; Release ${{ steps.ver.outputs.tag }} NÃO publicada (dry_run=true). APK e mapping no artefato release-v${{ steps.ver.outputs.version }}."
+          echo "## 🧪 Dry-run: ${{ steps.ver.outputs.tag }} compilada mas NÃO publicada (artefato release-v${{ steps.ver.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
