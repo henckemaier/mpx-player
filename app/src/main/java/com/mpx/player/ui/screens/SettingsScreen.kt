@@ -28,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,6 +87,8 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
     val dl by vm.download.collectAsStateWithLifecycle()
     val lrcSync by vm.lyricsSync.collectAsStateWithLifecycle()
     val up by vm.update.collectAsStateWithLifecycle()
+    val crash by vm.crashLog.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     var open by rememberSaveable { mutableIntStateOf(0) }
 
     val pickPlaylist = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -256,6 +260,27 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
                 )
                 TextButton("REBOOT ⟳", Modifier.weight(1f).fillMaxHeight(), border = c.accent, onClick = onReboot)
             }
+            DashedDivider()
+            // Log de falhas local (PREVENTIVO): nada é enviado; o usuário decide compartilhar.
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row {
+                    Txt("LOG ERROS", Modifier.width(96.dp), size = 11.sp, color = c.dim)
+                    Txt(if (crash.count == 0) "VAZIO" else "${crash.count} REGISTRO(S)", Modifier.weight(1f), size = 11.sp)
+                }
+                crash.last?.let { Txt("> $it", size = 10.sp, color = c.dim, maxLines = 3) }
+                Txt("SALVO SÓ NESTE APARELHO · NADA É ENVIADO", size = 10.sp, color = c.dim, maxLines = 2)
+            }
+            if (crash.count > 0) {
+                Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp).height(44.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton("COMPARTILHAR LOG", Modifier.weight(1f).fillMaxHeight()) {
+                        scope.launch {
+                            val f = vm.exportCrashLog() ?: return@launch
+                            shareCrashLog(context, f)
+                        }
+                    }
+                    TextButton("LIMPAR LOG", Modifier.weight(1f).fillMaxHeight(), border = c.accent, onClick = vm::clearCrashLog)
+                }
+            }
         }
 
         Spacer(Modifier.height(4.dp))
@@ -263,6 +288,20 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             Txt("(C) 2026 MPX//OS", size = 10.sp, color = c.dim)
             Txt("F10 = SAVE & EXIT", size = 10.sp, color = c.dim)
         }
+    }
+}
+
+/** Abre o "compartilhar" do sistema com o log (via FileProvider, permissão só de leitura e temporária). */
+private fun shareCrashLog(context: Context, file: java.io.File) {
+    runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "MPX Player - log de erros")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, "COMPARTILHAR LOG").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 

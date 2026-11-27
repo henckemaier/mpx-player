@@ -8,6 +8,7 @@ import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +49,7 @@ class Downloader(
     private val library: LibraryRepository,
     private val lyrics: LyricsRepository,
     private val settings: SettingsRepository,
+    private val crashLog: CrashLog,
 ) {
     private val _state = MutableStateFlow(DownloadState())
     val state: StateFlow<DownloadState> = _state.asStateFlow()
@@ -114,18 +116,30 @@ class Downloader(
 
             var archivedSkips = 0
             var unavailable = 0
+            var callbackFailed = false
             try {
                 YoutubeDL.getInstance().execute(request, processId) { progress, _, line ->
-                    val l = line.trim()
-                    if (l.contains("already been recorded in the archive")) archivedSkips++
-                    val m = itemRegex.find(l)
-                    _state.update { s ->
-                        s.copy(
-                            status = DownloadStatus.DOWNLOADING,
-                            progress = (progress / 100f).coerceIn(0f, 1f),
-                            overall = if (m != null) "BAIXANDO ${m.groupValues[1]}/${m.groupValues[2]}" else s.overall,
-                            line = if (l.isNotEmpty()) l else s.line,
-                        )
+                    // PREVENTIVO (causa raiz do crash NÃO confirmada): este callback roda na thread
+                    // leitora do stdout do yt-dlp (dentro da lib), fora dos try/catch abaixo — uma
+                    // exceção aqui derrubaria o app inteiro. Progresso é só cosmético: engole e loga
+                    // (uma vez por execução, p/ não inundar o log).
+                    try {
+                        val l = line.trim()
+                        if (l.contains("already been recorded in the archive")) archivedSkips++
+                        val m = itemRegex.find(l)
+                        _state.update { s ->
+                            s.copy(
+                                status = DownloadStatus.DOWNLOADING,
+                                progress = (progress / 100f).coerceIn(0f, 1f),
+                                overall = if (m != null) "BAIXANDO ${m.groupValues[1]}/${m.groupValues[2]}" else s.overall,
+                                line = if (l.isNotEmpty()) l else s.line,
+                            )
+                        }
+                    } catch (t: Throwable) {
+                        if (!callbackFailed) {
+                            callbackFailed = true
+                            crashLog.record("DOWNLOAD-PROGRESS", t, Thread.currentThread().name)
+                        }
                     }
                 }
             } catch (e: YoutubeDLException) {
@@ -187,7 +201,15 @@ class Downloader(
             finishError(e)
         } catch (e: InterruptedException) {
             _state.update { it.copy(status = DownloadStatus.CANCELED, overall = "CANCELADO", line = "") }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            // Cancelamento da coroutine: não é erro; precisa ser relançado p/ a coroutine encerrar.
+            _state.update { it.copy(status = DownloadStatus.CANCELED, overall = "CANCELADO", line = "") }
+            throw e
+        } catch (e: Throwable) {
+            // PREVENTIVO (causa raiz do crash NÃO confirmada): antes só `Exception` era capturada;
+            // um `Error` (OutOfMemoryError, UnsatisfiedLinkError, ExceptionInInitializerError...)
+            // escapava do viewModelScope.launch e FECHAVA o app. Agora vira ERRO na tela e o stack
+            // vai para o log local (CFG → SOBRE).
             finishError(e)
         } finally {
             currentProcessId = null
@@ -199,6 +221,7 @@ class Downloader(
             _state.update { it.copy(status = DownloadStatus.CANCELED, overall = "CANCELADO", line = "") }
             return
         }
+        crashLog.record("DOWNLOAD", e)
         val msg = (e.message ?: e.javaClass.simpleName).lineSequence().firstOrNull { it.isNotBlank() }?.take(140).orEmpty()
         _state.update { it.copy(status = DownloadStatus.ERROR, overall = "ERRO", error = msg, line = "") }
     }
