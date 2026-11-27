@@ -60,6 +60,12 @@ android {
             resValue("string", "app_name", "MPX QA")
         }
     }
+    lint {
+        // Baseline: erros pre-existentes ficam registrados; novos problemas falham o CI.
+        baseline = file("lint-baseline.xml")
+        // Bump de AGP e decisao separada; evita entradas com caminho absoluto no baseline.
+        disable += "AndroidGradlePluginVersion"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -101,7 +107,7 @@ dependencies {
     implementation(libs.youtubedl.android.library)
     implementation(libs.youtubedl.android.ffmpeg)
 
-    // Testes unitários (fora do versionamento — ver .gitignore)
+    // Testes unitários (JVM)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.json:json:20231013")
