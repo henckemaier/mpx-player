@@ -5,6 +5,13 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+### Alterado
+- Processo de desenvolvimento (sem mudança no app): a `main` passa a ser protegida, com mudanças por
+  Pull Request e checks obrigatórios (build, testes JVM, lint e guarda anti-regressão do R8).
+- Um push na `main` sem subir a versão não publica mais nada: a release existente e seu APK ficam
+  intactos. Cada release agora inclui o `mapping.txt` do R8, para desofuscar crashes.
+- Testes unitários JVM e lint com baseline passam a ser versionados no repositório.
+
 ## [1.6.1] - 2026-11-27
 
 ### Corrigido
