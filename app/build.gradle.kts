@@ -21,8 +21,8 @@ android {
         applicationId = "com.mpx.player"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.6.0"
+        versionCode = 5
+        versionName = "1.6.1"
 
         // yt-dlp/Python/FFmpeg nativos só p/ arm64 (APK menor; cobre aparelhos do minSdk 29+).
         ndk {
@@ -46,6 +46,18 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
+        // Build de QA: MESMO R8/minify/shrink da release, mas com applicationId ".qa" para instalar
+        // LADO A LADO com o app do usuário (sem desinstalar nem tocar nos dados dele). Assinado com a
+        // debug keystore. Não altera o applicationId nem a assinatura da release real.
+        // Gerar: ./gradlew :app:assembleQa  ->  app/build/outputs/apk/qa/app-qa.apk
+        create("qa") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            resValue("string", "app_name", "MPX QA")
         }
     }
     compileOptions {

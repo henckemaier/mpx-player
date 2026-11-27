@@ -438,6 +438,12 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
     fun cancelLyricsSync() { lyricsJob?.cancel() }
     fun clearLyricsSync() { _lyricsSync.value = LyricsSyncUi() }
 
+    // ---- Log de falhas local (PREVENTIVO, ver CrashLog): só no aparelho, compartilhado sob demanda
+    val crashLog = app.crashLog.info
+
+    suspend fun exportCrashLog(): java.io.File? = kotlinx.coroutines.withContext(Dispatchers.IO) { app.crashLog.export() }
+    fun clearCrashLog() { viewModelScope.launch(Dispatchers.IO) { app.crashLog.clear() } }
+
     // ---- Auto-update do app (GitHub Releases)
     val update = app.updater.state
 

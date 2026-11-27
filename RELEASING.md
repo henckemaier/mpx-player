@@ -32,9 +32,8 @@ A **tag** da release é `v<versionName>` (ex.: `v1.5.0`) — criada automaticame
 O updater compara o `versionName` **numericamente, campo a campo** (esquerda → direita; campo que
 falta conta como `0`). Portanto a próxima versão precisa ser **numericamente maior** que a instalada.
 
-> ⚠️ **Estado atual:** `versionName = "1.04"` (que vale numericamente **1.4**), `versionCode = 2`.
-> A próxima versão deve ser **maior que 1.4** — ex.: `1.4.1` (correção) ou `1.5.0` (recurso).
-> **Não** use `1.0.x`: seria interpretado como anterior a `1.04`.
+> **Estado atual:** `versionName = "1.6.1"`, `versionCode = 5`.
+> A próxima versão deve ser **maior que 1.6.1** — ex.: `1.6.2` (correção) ou `1.7.0` (recurso).
 
 ---
 
