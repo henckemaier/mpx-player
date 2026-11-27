@@ -122,11 +122,15 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      # Só publica a partir da main: um workflow_dispatch em outra branch (mesmo sem dry_run)
+      # nunca cria/publica Release — no máximo compila e guarda o artefato.
       - name: Publica a Release (APK + mapping)
-        if: steps.guard.outputs.exists == 'false' && !inputs.dry_run
+        if: steps.guard.outputs.exists == 'false' && !inputs.dry_run && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
+          # A tag nasce no commit que foi compilado (não no HEAD do branch padrão no momento).
+          target_commitish: ${{ github.sha }}
           name: MPX Player ${{ steps.ver.outputs.tag }}
           files: |
             mpx-player-v${{ steps.ver.outputs.version }}.apk
@@ -134,8 +138,14 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
 
-      - name: Resumo (dry-run)
-        if: steps.guard.outputs.exists == 'false' && inputs.dry_run
+      - name: Resumo (sem publicação)
+        if: steps.guard.outputs.exists == 'false' && (inputs.dry_run || github.ref != 'refs/heads/main')
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          REF: ${{ github.ref }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          echo "::notice title=Dry-run::Build OK; Release ${{ steps.ver.outputs.tag }} NÃO publicada (dry_run=true). APK e mapping no artefato release-v${{ steps.ver.outputs.version }}."
-          echo "## 🧪 Dry-run: ${{ steps.ver.outputs.tag }} compilada mas NÃO publicada (artefato release-v${{ steps.ver.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
+          why="dry_run=$DRY_RUN, ref=$REF (só a main publica)"
+          echo "::notice title=Sem publicação::Build OK; Release $TAG NÃO publicada ($why). APK e mapping no artefato release-v$VERSION."
+          echo "## 🧪 $TAG compilada mas NÃO publicada ($why) — artefato release-v$VERSION" >> "$GITHUB_STEP_SUMMARY"
