@@ -142,8 +142,14 @@ class CrashLog(
             val headline = maskSecrets(error.message ?: "").lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty()
             val title = buildString {
                 append(ENTRY_MARK).append(fmt.format(Date(timeMs))).append(" [").append(tag).append("] ")
-                append(error.javaClass.simpleName.ifEmpty { error.javaClass.name })
-                if (headline.isNotEmpty()) append(": ").append(headline)
+                // SanitizedException já traz a classe original no início da mensagem (e no release o
+                // nome dela seria minificado, ex. "c:"): não repete o prefixo.
+                if (error is SanitizedException && headline.isNotEmpty()) {
+                    append(headline)
+                } else {
+                    append(error.javaClass.simpleName.ifEmpty { error.javaClass.name })
+                    if (headline.isNotEmpty()) append(": ").append(headline)
+                }
             }
             val stack = StringWriter().also { sw -> PrintWriter(sw).use { error.printStackTrace(it) } }.toString()
             var body = buildString {

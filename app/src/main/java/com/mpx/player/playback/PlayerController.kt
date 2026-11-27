@@ -75,7 +75,12 @@ class PlayerController(
             val id = _state.value.currentId
             val remote = id != null && id < 0 && id != -1L
             _state.update { it.copy(error = playbackErrorMessage(error.errorCode, remote)) }
-            crashLog?.record(if (remote) "PLAYER-DESKTOP" else "PLAYER", error)
+            // errorCodeName (ex.: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED) não é minificado pelo R8,
+            // ao contrário do nome da classe; a causa original segue no stack (URI c/ token mascarada).
+            crashLog?.record(
+                if (remote) "PLAYER-DESKTOP" else "PLAYER",
+                IllegalStateException("${error.errorCodeName}: ${error.message}", error),
+            )
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {

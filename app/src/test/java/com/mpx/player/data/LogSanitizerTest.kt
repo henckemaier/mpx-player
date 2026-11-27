@@ -58,6 +58,12 @@ class LogSanitizerTest {
         assertEquals("x%26t%3D***", maskSecrets("x%26t%3D$tk"))
     }
 
+    @Test fun `titulo de SanitizedException nao repete a classe (nome minificado no release)`() {
+        val t = sanitizeThrowable(IllegalStateException("HTTP 401 em http://10.0.2.2:8099/library"), tk)
+        val first = CrashLog.format("DESKTOP", t, 0L).lineSequence().first()
+        assertTrue(first, first.endsWith("[DESKTOP] java.lang.IllegalStateException: HTTP 401 em http://10.0.2.2:8099/library"))
+    }
+
     @Test fun `causa ciclica nao trava`() {
         val a = IOException("a?token=$tk"); val b = IOException("b", a); a.initCause(b)
         assertFalse(CrashLog.format("X", sanitizeThrowable(a, tk), 0L).contains(tk))
