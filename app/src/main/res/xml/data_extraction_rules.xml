@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+: o pareamento desktop (host + TOKEN) e o indice de sincronizadas NAO vao p/ backup nem transferencia. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/ds_pairing.preferences_pb" />
+        <exclude domain="file" path="sync_index.json" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/ds_pairing.preferences_pb" />
+        <exclude domain="file" path="sync_index.json" />
+    </device-transfer>
+</data-extraction-rules>

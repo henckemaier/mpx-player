@@ -13,9 +13,17 @@ import com.mpx.player.model.EqSettings
 import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.theme.CUSTOM_THEME
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "config_sys")
+
+/**
+ * Pareamento com o agente desktop (host + TOKEN) em DataStore PRÓPRIO, para poder ser EXCLUÍDO do
+ * backup/transferência (res/xml/data_extraction_rules.xml e backup_rules.xml) sem perder as demais
+ * preferências (que seguem em "config_sys" e continuam no backup).
+ */
+private val Context.pairingStore by preferencesDataStore(name = "ds_pairing")
 
 class SettingsRepository(private val context: Context) {
 
@@ -41,13 +49,17 @@ class SettingsRepository(private val context: Context) {
         val bass = booleanPreferencesKey("fx_bass")
         val surround = booleanPreferencesKey("fx_surround")
         val loud = booleanPreferencesKey("fx_loud")
+    }
+
+    private object P {
         val dsHost = stringPreferencesKey("ds_host")
         val dsToken = stringPreferencesKey("ds_token")
     }
 
-    val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
+    val settings: Flow<UserSettings> =
+        combine(context.dataStore.data, context.pairingStore.data) { prefs, pair -> prefs.toSettings(pair) }
 
-    private fun Preferences.toSettings(): UserSettings {
+    private fun Preferences.toSettings(pair: Preferences): UserSettings {
         val d = UserSettings()
         return UserSettings(
             theme = this[K.theme] ?: d.theme,
@@ -73,8 +85,8 @@ class SettingsRepository(private val context: Context) {
                 surround = this[K.surround] ?: false,
                 loudness = this[K.loud] ?: false,
             ),
-            desktopHost = this[K.dsHost],
-            desktopToken = this[K.dsToken],
+            desktopHost = pair[P.dsHost],
+            desktopToken = pair[P.dsToken],
         )
     }
 
@@ -102,11 +114,11 @@ class SettingsRepository(private val context: Context) {
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
 
     /** Grava (ou limpa, com null) o agente desktop pareado numa única escrita. */
-    suspend fun setDesktop(host: String?, token: String?) = context.dataStore.edit {
+    suspend fun setDesktop(host: String?, token: String?) = context.pairingStore.edit {
         if (host.isNullOrBlank() || token.isNullOrBlank()) {
-            it.remove(K.dsHost); it.remove(K.dsToken)
+            it.remove(P.dsHost); it.remove(P.dsToken)
         } else {
-            it[K.dsHost] = host; it[K.dsToken] = token
+            it[P.dsHost] = host; it[P.dsToken] = token
         }
     }
 
