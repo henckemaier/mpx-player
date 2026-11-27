@@ -335,7 +335,8 @@ private fun DesktopBody(
 ) {
     val c = Mpx.colors
     var host by rememberSaveable(st.host) { mutableStateOf(st.host ?: "") }
-    var token by rememberSaveable { mutableStateOf("") }
+    // Token NUNCA em rememberSaveable: o rascunho não pode sobreviver à morte do processo.
+    var token by remember { mutableStateOf("") }
     val connecting = st.status == RemoteStatus.CONNECTING
     val connected = st.status == RemoteStatus.CONNECTED
 
@@ -362,7 +363,7 @@ private fun DesktopBody(
         }
 
         TerminalField("IP", "192.168.1.33:8080", host, enabled = !connecting) { host = it }
-        TerminalField("TK", "cole o token aqui", token, enabled = !connecting) { token = it }
+        TerminalField("TK", if (connected) "•••••••• (SALVO)" else "cole o token aqui", token, enabled = !connecting) { token = it }
 
         when (st.status) {
             RemoteStatus.CONNECTING -> {
@@ -378,7 +379,10 @@ private fun DesktopBody(
         }
 
         if (connected) {
-            TextButton("> DESCONECTAR", Modifier.fillMaxWidth().height(44.dp), border = c.accent, onClick = onDisconnect)
+            TextButton("> DESCONECTAR", Modifier.fillMaxWidth().height(44.dp), border = c.accent) {
+                token = ""
+                onDisconnect()
+            }
         } else {
             TextButton(
                 if (connecting) "CONECTANDO..." else "> CONECTAR",

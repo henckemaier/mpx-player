@@ -53,7 +53,36 @@ class SyncLogicTest {
     }
 
     @Test fun nomeDoArquivo() {
-        assertEquals("abc.mp3", SyncLogic.fileNameFor("abc", "audio/mpeg"))
-        assertEquals("abc.audio", SyncLogic.fileNameFor("abc", "x/y"))
+        assertEquals("Foo - Bar [abcdef12].mp3", SyncLogic.displayNameFor("abcdef123456", "Foo", "Bar", "audio/mpeg"))
+        assertEquals("Bar [abc].audio", SyncLogic.displayNameFor("abc", null, "Bar", "x/y"))
+        assertEquals("Bar [abc].wav", SyncLogic.displayNameFor("abc", "<unknown>", "Bar", "audio/wav"))
+        assertEquals("Bar [abc].wav", SyncLogic.displayNameFor("abc", "  ", "Bar", "audio/wav"))
+    }
+
+    @Test fun nomeLegivelSanitizado() {
+        assertEquals("a b c [id].mp3", SyncLogic.displayNameFor("id", null, "a/b\\c", "audio/mpeg"))
+        assertEquals("x y [id].mp3", SyncLogic.displayNameFor("id", null, "x:*?\"<>|y", "audio/mpeg"))
+        assertEquals("a b [id].mp3", SyncLogic.displayNameFor("id", null, "a\u0000\n\t  b", "audio/mpeg"))
+        assertEquals("Ação - 日本語 ♪ [id].mp3", SyncLogic.displayNameFor("id", "Ação", "日本語 ♪", "audio/mpeg"))
+    }
+
+    @Test fun nomeLegivelPathTraversalEVazios() {
+        val n = SyncLogic.displayNameFor("abcdef123", "..", "../../etc/passwd", "audio/mpeg")
+        assertFalse(n.contains("/") || n.contains("\\"))
+        assertEquals("etc passwd [abcdef12].mp3", n) // separadores viram espaço; pontos das pontas caem
+        assertEquals("abc.mp3", SyncLogic.displayNameFor("abc", "x", "...", "audio/mpeg"))
+        assertEquals("abc.mp3", SyncLogic.displayNameFor("abc", "x", "", "audio/mpeg"))
+        assertEquals("abc.mp3", SyncLogic.displayNameFor("abc", "x", "///", "audio/mpeg"))
+        assertEquals("abc.mp3", SyncLogic.displayNameFor("abc", "x", null, "audio/mpeg"))
+    }
+
+    @Test fun nomeLegivelLimitaTamanho() {
+        val suffix = " [abcdef12].mp3"
+        val n = SyncLogic.displayNameFor("abcdef123", "A".repeat(300), "T", "audio/mpeg")
+        assertTrue(n.endsWith(suffix))
+        assertTrue(n.length <= 120 + suffix.length)
+        // não corta par substituto (emoji) ao meio
+        val e = SyncLogic.displayNameFor("abcdef123", null, "🎵".repeat(100), "audio/mpeg")
+        assertFalse(e.dropLast(suffix.length).last().isHighSurrogate())
     }
 }
