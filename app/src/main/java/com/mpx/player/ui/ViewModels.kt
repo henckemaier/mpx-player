@@ -478,6 +478,7 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
         app.syncManager.syncFavorites(favRemotas)
     }
 
+    fun cancelSync() = app.syncManager.cancel()
     fun removeOffline() = app.syncManager.removeAllOffline()
     fun clearSyncResult() = app.syncManager.clearResult()
 

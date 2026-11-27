@@ -47,6 +47,26 @@ object SyncLogic {
         else -> "audio"
     }
 
+    private val SAFE_REMOTE_ID = Regex("[A-Za-z0-9_-]{1,128}")
+
+    /**
+     * remoteId vindo do servidor só vale como nome de arquivo/chave se for [A-Za-z0-9_-]{1,128}
+     * (ASCII estrito: barra, ponto, '..', unicode, vazio ou longo demais são rejeitados). PURO.
+     */
+    fun isSafeRemoteId(id: String?): Boolean = id != null && SAFE_REMOTE_ID.matches(id)
+
+    /** Margem de espaço livre exigida ALÉM do tamanho do arquivo (e mínimo quando o tamanho é desconhecido). */
+    const val SPACE_MARGIN_BYTES: Long = 32L * 1024 * 1024
+    const val UNKNOWN_SIZE_MIN_FREE_BYTES: Long = 128L * 1024 * 1024
+
+    /** Há espaço p/ gravar? [contentLength] <= 0 = desconhecido -> exige o mínimo fixo. PURO. */
+    fun hasEnoughSpace(contentLength: Long, usableBytes: Long): Boolean =
+        if (contentLength > 0) usableBytes >= contentLength + SPACE_MARGIN_BYTES
+        else usableBytes >= UNKNOWN_SIZE_MIN_FREE_BYTES
+
+    /** Integridade: sem Content-Length (<0) aceita; com ele, os bytes gravados têm de bater exatamente. PURO. */
+    fun sizeMatches(expected: Long, written: Long): Boolean = expected < 0 || expected == written
+
     /** Nome do arquivo sincronizado: "<remoteId>.<ext>". PURO. */
     fun fileNameFor(remoteId: String, mime: String): String = "$remoteId.${extForMime(mime)}"
 
