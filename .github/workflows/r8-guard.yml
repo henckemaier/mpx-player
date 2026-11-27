@@ -28,7 +28,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build release minificado (sem keystore: usa a debug)
+      - name: "Build release minificado (sem keystore, usa a debug)"
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon
