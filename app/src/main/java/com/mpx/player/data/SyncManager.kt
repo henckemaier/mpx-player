@@ -3,6 +3,8 @@ package com.mpx.player.data
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.os.Environment
+import android.os.StatFs
 import android.provider.MediaStore
 import com.mpx.player.model.Track
 import com.mpx.player.model.TrackOrigin
@@ -42,86 +44,148 @@ class SyncManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
 
+    @Volatile
+    private var cancelRequested = false
+
     fun syncFavorites(favoritasRemotas: List<Track>) {
         if (_state.value.running) return
+        cancelRequested = false
+        _state.value = _state.value.copy(running = true, result = null) // reserva já (evita duplo-clique)
         job = scope.launch { runSync(favoritasRemotas) }
     }
 
+    /** Cancela o sync em andamento: o download atual para no próximo bloco e a faixa parcial é apagada. */
+    fun cancel() {
+        if (_state.value.running) cancelRequested = true
+    }
+
+    private sealed interface Outcome {
+        data class Ok(val mediaId: Long) : Outcome
+        data object Fail : Outcome
+        data object NoSpace : Outcome
+        data object Cancelled : Outcome
+    }
+
     private suspend fun runSync(favoritasRemotas: List<Track>) {
-        val todo = SyncLogic.syncDiff(favoritasRemotas, index.index.value)
-        if (todo.isEmpty()) {
+        val diff = SyncLogic.syncDiff(favoritasRemotas, index.index.value)
+        // remoteId do servidor só vira nome de arquivo se for seguro; os inválidos contam como erro.
+        val todo = diff.filter { SyncLogic.isSafeRemoteId(it.remoteId) }
+        if (diff.isEmpty()) {
             _state.value = SyncState(result = "NADA A SINCRONIZAR")
             return
         }
-        _state.value = SyncState(running = true, total = todo.size)
-        var ok = 0
-        val written = LinkedHashMap<String, String>() // remoteId -> fileName escrito
-        todo.forEachIndexed { i, t ->
+        _state.value = SyncState(running = true, total = diff.size)
+        var failed = diff.size - todo.size
+        var noSpace = false
+        var cancelled = false
+        val written = LinkedHashMap<String, Long>() // remoteId -> _ID do MediaStore (do insert)
+        for ((i, t) in todo.withIndex()) {
+            if (cancelRequested) { cancelled = true; break }
             _state.value = _state.value.copy(done = i)
-            val rid = t.remoteId ?: return@forEachIndexed
-            val name = SyncLogic.fileNameFor(rid, t.mimeType)
-            if (downloadAndInsert(t, name)) {
-                ok++
-                written[rid] = name
+            val rid = t.remoteId ?: continue
+            when (val r = downloadAndInsert(t, SyncLogic.fileNameFor(rid, t.mimeType))) {
+                is Outcome.Ok -> written[rid] = r.mediaId
+                Outcome.Fail -> failed++
+                Outcome.NoSpace -> noSpace = true
+                Outcome.Cancelled -> cancelled = true
             }
+            if (noSpace || cancelled) break
         }
-        // PÓS-ESCRITA: re-scaneia e resolve a localKey REAL de cada sincronizada (lê do scan,
-        // NÃO forja — o MediaStore pode normalizar o RELATIVE_PATH). Acha pelo DISPLAY_NAME único.
+        // PÓS-ESCRITA: re-scaneia e resolve a localKey REAL pelo _ID devolvido no insert (NÃO pelo
+        // nome: o MediaStore pode renomear "id.mp3" -> "id (1).mp3" numa colisão).
         library.scan()
         val scan = library.state.value.tracks
         var resolved = 0
-        written.forEach { (rid, name) ->
-            val track = scan.firstOrNull { it.origin == TrackOrigin.LOCAL && it.displayName.equals(name, ignoreCase = true) }
+        written.forEach { (rid, mediaId) ->
+            val track = scan.firstOrNull { it.origin == TrackOrigin.LOCAL && it.id == mediaId }
             if (track != null) {
-                index.put(rid, SyncedEntry(track.key, track.id))
+                index.put(rid, SyncedEntry(track.key, mediaId))
                 resolved++
             }
         }
-        val notIndexed = ok - resolved
+        val notIndexed = written.size - resolved
         _state.value = SyncState(
-            total = todo.size,
-            done = todo.size,
+            total = diff.size,
+            done = if (cancelled || noSpace) resolved else diff.size,
             result = buildString {
-                append("OFFLINE OK: $resolved/${todo.size}")
-                if (ok < todo.size) append(" · ${todo.size - ok} FALHARAM")
+                if (cancelled) append("CANCELADO · ")
+                append("OFFLINE OK: $resolved/${diff.size}")
+                if (failed > 0) append(" · $failed FALHARAM")
+                if (noSpace) append(" · ESPAÇO INSUFICIENTE (LIBERE ARMAZENAMENTO)")
                 if (notIndexed > 0) append(" · $notIndexed NÃO ACHADAS NO SCAN (RE-TENTE)")
             },
         )
     }
 
-    /** Baixa o /stream (Uri da sub-2, com ?token=) e grava via MediaStore scoped (molde Downloader). */
-    private fun downloadAndInsert(t: Track, fileName: String): Boolean {
+    private fun freeBytes(): Long =
+        runCatching { StatFs(Environment.getExternalStorageDirectory().path).availableBytes }.getOrDefault(Long.MAX_VALUE)
+
+    /**
+     * Baixa o /stream (Uri da sub-2, com ?token=) e grava via MediaStore scoped (molde Downloader).
+     * Confere espaço livre ANTES de inserir e Content-Length x bytes gravados DEPOIS; qualquer falha,
+     * divergência ou cancelamento apaga a entrada pendente (nunca fica faixa parcial).
+     */
+    private fun downloadAndInsert(t: Track, fileName: String): Outcome {
         val resolver = context.contentResolver
-        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Audio.Media.MIME_TYPE, t.mimeType)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/MPX")
-            put(MediaStore.Audio.Media.IS_MUSIC, 1)
-            put(MediaStore.Audio.Media.IS_PENDING, 1)
-        }
-        val uri = runCatching { resolver.insert(collection, values) }.getOrNull() ?: return false
-        val ok = runCatching {
-            val conn = (URL(t.uri.toString()).openConnection() as HttpURLConnection).apply {
+        val conn = runCatching {
+            (URL(t.uri.toString()).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 30_000
             }
-            try {
-                if (conn.responseCode != 200) return@runCatching false
-                resolver.openOutputStream(uri)?.use { out -> conn.inputStream.use { it.copyTo(out) } }
-                true
-            } finally {
-                conn.disconnect()
+        }.getOrNull() ?: return Outcome.Fail
+        try {
+            val code = runCatching { conn.responseCode }.getOrDefault(-1)
+            if (code != 200) return Outcome.Fail
+            val expected = conn.contentLengthLong // -1 se ausente
+            if (!SyncLogic.hasEnoughSpace(expected, freeBytes())) return Outcome.NoSpace
+
+            val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Audio.Media.MIME_TYPE, t.mimeType)
+                put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/MPX")
+                put(MediaStore.Audio.Media.IS_MUSIC, 1)
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
             }
-        }.getOrDefault(false)
-        if (!ok) {
-            runCatching { resolver.delete(uri, null, null) }
-            return false
+            val uri = runCatching { resolver.insert(collection, values) }.getOrNull() ?: return Outcome.Fail
+            var bytes = 0L
+            var cancelled = false
+            val ok = runCatching {
+                val out = resolver.openOutputStream(uri) ?: return@runCatching false
+                out.use { o ->
+                    conn.inputStream.use { input ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            if (cancelRequested) { cancelled = true; break }
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            o.write(buf, 0, n)
+                            bytes += n
+                        }
+                    }
+                }
+                !cancelled
+            }.getOrDefault(false)
+            if (cancelled || !ok || !SyncLogic.sizeMatches(expected, bytes)) {
+                runCatching { resolver.delete(uri, null, null) }
+                return if (cancelled) Outcome.Cancelled else Outcome.Fail
+            }
+            val published = runCatching {
+                resolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
+            }.getOrDefault(0)
+            if (published <= 0) {
+                runCatching { resolver.delete(uri, null, null) }
+                return Outcome.Fail
+            }
+            val mediaId = runCatching { ContentUris.parseId(uri) }.getOrNull()
+            if (mediaId == null) {
+                runCatching { resolver.delete(uri, null, null) }
+                return Outcome.Fail
+            }
+            return Outcome.Ok(mediaId)
+        } finally {
+            conn.disconnect()
         }
-        runCatching {
-            resolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
-        }
-        return true
     }
 
     /** Remove UMA sincronizada: deleta o arquivo próprio + tira do índice + re-scaneia. */

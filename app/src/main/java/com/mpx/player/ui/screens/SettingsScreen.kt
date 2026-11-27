@@ -296,7 +296,7 @@ fun SettingsScreen(ui: SettingsUi, vm: SettingsViewModel, onReboot: () -> Unit) 
             val pending by vm.syncPending.collectAsStateWithLifecycle()
             val offlineN by vm.offlineCount.collectAsStateWithLifecycle()
             if (desktop.status == RemoteStatus.CONNECTED || offlineN > 0) {
-                DesktopSyncRow(sync, pending, offlineN, onSync = vm::syncFavorites, onRemove = vm::removeOffline, onClear = vm::clearSyncResult)
+                DesktopSyncRow(sync, pending, offlineN, onSync = vm::syncFavorites, onCancel = vm::cancelSync, onRemove = vm::removeOffline, onClear = vm::clearSyncResult)
             }
         }
 
@@ -401,6 +401,7 @@ private fun DesktopSyncRow(
     pending: Int,
     offlineN: Int,
     onSync: () -> Unit,
+    onCancel: () -> Unit,
     onRemove: () -> Unit,
     onClear: () -> Unit,
 ) {
@@ -412,6 +413,7 @@ private fun DesktopSyncRow(
             val lit = if (st.total > 0) (st.done * 20 / st.total).coerceIn(0, 20) else 0
             SegmentBar(20, lit, height = 20.dp)
             Txt("SINCRONIZANDO ${st.done}/${st.total} ...", size = 12.sp)
+            TextButton("> CANCELAR", Modifier.fillMaxWidth().height(44.dp), border = c.accent, onClick = onCancel)
         } else {
             TextButton(
                 "> SINCRONIZAR FAVORITAS ($pending)",
