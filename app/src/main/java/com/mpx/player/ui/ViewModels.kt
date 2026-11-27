@@ -71,6 +71,7 @@ data class PlayerUi(
     val shuffle: Boolean = false,
     val repeat: RepeatMode = RepeatMode.OFF,
     val sourceLabel: String = "",
+    val error: String? = null,
 ) {
     val totalMs: Long get() = queue.sumOf { it.durationMs }
     val remainingMs: Long
@@ -96,6 +97,7 @@ class PlayerViewModel(private val app: AppContainer) : ViewModel() {
             shuffle = p.shuffle,
             repeat = p.repeat,
             sourceLabel = p.sourceLabel,
+            error = p.error,
         )
     }.state(this, PlayerUi())
 

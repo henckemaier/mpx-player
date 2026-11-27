@@ -197,7 +197,7 @@ class RemoteLibrarySource(
         }
         if (!isValidPairToken(token)) {
             _tracks.value = emptyList()
-            _state.value = RemoteState(RemoteStatus.ERROR, host, 0, "TOKEN INVÁLIDO")
+            _state.value = RemoteState(RemoteStatus.ERROR, host, 0, "TOKEN INVÁLIDO (FORMATO) · NÃO FOI ENVIADO AO PC")
             return
         }
         _state.value = RemoteState(RemoteStatus.CONNECTING, host)

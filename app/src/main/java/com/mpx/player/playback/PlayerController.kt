@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -38,6 +39,8 @@ data class PlayerState(
     val shuffle: Boolean = false,
     val repeat: RepeatMode = RepeatMode.OFF,
     val sourceLabel: String = "",
+    /** Último erro do player (texto p/ o CMD.LOG); null = sem erro. Limpo ao tocar/trocar de faixa. */
+    val error: String? = null,
 ) {
     val currentId: Long? get() = queue.getOrNull(index)
 }
@@ -45,7 +48,11 @@ data class PlayerState(
 data class VolumeState(val level: Int = 0, val max: Int = 15, val muted: Boolean = false)
 
 /** Fachada da UI sobre o MediaController conectado ao [PlaybackService]. */
-class PlayerController(private val context: Context) {
+class PlayerController(
+    private val context: Context,
+    /** Log local p/ falhas de reprodução (o CrashLog mascara ?token= da URI do agente). */
+    private val crashLog: com.mpx.player.data.CrashLog? = null,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controller: MediaController? = null
@@ -61,6 +68,19 @@ class PlayerController(private val context: Context) {
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
+
+        // Antes nada tratava o erro: com o agente desktop parado a faixa remota ficava em 00:00,
+        // PAUSE e sem nenhuma mensagem. Agora vira linha "> ERRO ..." no CMD.LOG e vai p/ o log.
+        override fun onPlayerError(error: PlaybackException) {
+            val id = _state.value.currentId
+            val remote = id != null && id < 0 && id != -1L
+            _state.update { it.copy(error = playbackErrorMessage(error.errorCode, remote)) }
+            crashLog?.record(if (remote) "PLAYER-DESKTOP" else "PLAYER", error)
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            _state.update { it.copy(error = null) }
+        }
     }
 
     fun connect() {
@@ -111,7 +131,7 @@ class PlayerController(private val context: Context) {
     fun play(tracks: List<Track>, startIndex: Int, label: String) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
-        _state.update { it.copy(sourceLabel = label) }
+        _state.update { it.copy(sourceLabel = label, error = null) }
         c.setMediaItems(tracks.map { it.toMediaItem() }, startIndex.coerceIn(0, tracks.lastIndex), 0L)
         c.shuffleModeEnabled = false
         c.prepare()
@@ -121,6 +141,7 @@ class PlayerController(private val context: Context) {
     fun toggle() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else {
+            _state.update { it.copy(error = null) }
             if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0)
             c.prepare(); c.play()
         }

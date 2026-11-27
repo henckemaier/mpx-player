@@ -33,7 +33,7 @@ class AppContainer(val context: Context, val crashLog: CrashLog) {
     val playlistImporter = PlaylistImporter(context)
     val playlists = PlaylistRepository(context)
     val covers = CoverArtLoader(context)
-    val player = PlayerController(context)
+    val player = PlayerController(context, crashLog)
     val downloader = Downloader(context, library, lyrics, settings, crashLog)
     val updater = UpdateRepository(context)
 }
