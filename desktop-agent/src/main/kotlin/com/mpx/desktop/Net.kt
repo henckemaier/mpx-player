@@ -18,3 +18,9 @@ fun siteLocalIpv4s(): List<String> =
         .map { it.hostAddress }
         .distinct()
         .toList()
+
+/** [host] e um bind curinga (todas as interfaces)? "0.0.0.0", "::", "[::]" ou "0:0:0:0:0:0:0:0". */
+fun isWildcardHost(host: String): Boolean {
+    val h = host.trim().removePrefix("[").removeSuffix("]")
+    return h == "0.0.0.0" || h == "::" || h.matches(Regex("0(:0){7}"))
+}
