@@ -74,3 +74,20 @@ A task (ver `build.gradle.kts`) roda `installDist` (monta os jars em `build/inst
 `jpackage --type app-image` com `--jlink-options "--strip-debug --no-header-files
 --no-man-pages --compress=2"` (JRE trimado). Instalador MSI fica para depois; o MVP só prova
 que roda standalone. QR/mDNS (descoberta automática) = sub-3.
+
+## Segurança — leia antes de usar
+
+- **HTTP em claro, sem TLS.** O tráfego entre o celular e o agente (biblioteca, áudio, capas) não é
+  criptografado. Use **somente em rede local confiável** (sua casa), nunca em Wi-Fi público.
+- **O token vai na URL dos streams** (`/stream/<id>?token=…`, `/art/<id>?token=…`), porque o player
+  do Android não envia cabeçalho de autenticação. Ele pode aparecer em logs de proxy/roteador.
+  `/library` usa `Authorization: Bearer`. O token muda a cada arranque do agente.
+- **Bind LAN-only por padrão:** o agente liga no 1º IPv4 de rede local detectado. Com
+  `--host 0.0.0.0` (ou `::`) ele fica exposto em **todas** as interfaces (inclusive VPN/WAN) e
+  imprime um `WARNING` no console — evite.
+- **Proteções:** token comparado em tempo constante; 10 falhas de token em 60 s por IP →
+  `429 Too Many Requests` por 60 s; erros `500` respondem corpo genérico (detalhe só no console,
+  sem a query/token); o scan não segue symlinks/junctions para fora da pasta escolhida e só serve
+  arquivos indexados (sem path traversal por id).
+- **No app:** o MPX só conecta a IP de rede privada/loopback (e confirma o pareamento por QR/link
+  antes de salvar o token, que fica fora do backup do Android).

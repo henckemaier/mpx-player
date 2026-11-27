@@ -14,19 +14,29 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.partialcontent.PartialContent
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.header
+import io.ktor.server.request.path
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * Modulo Ktor do agente: /ping //library //stream(Range) //art, TODOS atras de [token]
- * (Bearer OU ?token=; ausente/errado -> 401). PartialContent do Ktor trata Range/206 (nao
+ * (Bearer OU ?token=; ausente/errado -> 401; token comparado em tempo constante). [limiter]:
+ * 10 falhas de token em 60s por IP de origem -> 429 por 60s. Erros 500 tem corpo generico. PartialContent do Ktor trata Range/206 (nao
  * implementamos Range na mao). Funcao separada do Main p/ o ktor-server-test-host exercitar
  * auth e Range sem subir socket/PC real.
  */
-fun Application.mpxAgentModule(library: Library, token: String, version: String) {
+fun Application.mpxAgentModule(
+    library: Library,
+    token: String,
+    version: String,
+    limiter: AuthRateLimiter = AuthRateLimiter(),
+) {
     install(ContentNegotiation) { json() }
     install(PartialContent)
     // HEAD /stream/{id} -> roda o GET e descarta o corpo (200 + headers, incl. Accept-Ranges).
@@ -40,16 +50,26 @@ fun Application.mpxAgentModule(library: Library, token: String, version: String)
             call.respondText("404 Not Found\n", status = status)
         }
         exception<Throwable> { call, cause ->
-            call.respondText("500 ${cause.message}\n", status = HttpStatusCode.InternalServerError)
+            // Detalhe so no log local; o cliente recebe corpo generico (sem message/stack/caminhos).
+            Logger.getLogger("mpx-agent").log(Level.SEVERE, "erro 500 em ${call.request.path()}" /* sem query: nao loga o token */, cause)
+            call.respondText("500 internal error\n", status = HttpStatusCode.InternalServerError)
         }
     }
 
     // Gate de token ANTES do routing: Authorization: Bearer <token> OU ?token=<token>.
     intercept(ApplicationCallPipeline.Plugins) {
+        val ip = call.request.local.remoteHost
+        val wait = limiter.retryAfterSeconds(ip)
+        if (wait > 0) {
+            call.response.header(HttpHeaders.RetryAfter, wait.toString())
+            call.respondText("429 Too Many Requests\n", status = HttpStatusCode.TooManyRequests)
+            return@intercept finish()
+        }
         val auth = call.request.header(HttpHeaders.Authorization)
         val bearer = auth?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
         val provided = bearer ?: call.request.queryParameters["token"]
-        if (provided == null || provided != token) {
+        if (!tokenMatches(provided, token)) {
+            limiter.recordFailure(ip)
             call.respond(HttpStatusCode.Unauthorized)
             return@intercept finish()
         }

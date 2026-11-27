@@ -17,7 +17,7 @@ const val AGENT_VERSION = "0.1.0"
  *  - --port: porta (default 8080).
  *  - --host: forca o IP de bind (override); senao usa o 1o IPv4 site-local (LAN) detectado.
  *
- * NUNCA liga em 0.0.0.0 ([SD-C2]). Gera um token aleatorio no arranque e o imprime no
+ * Por padrao NUNCA liga em 0.0.0.0 ([SD-C2]); so se o usuario passar --host 0.0.0.0 (imprime WARNING). Gera um token aleatorio no arranque e o imprime no
  * console junto das URLs da LAN. Scan da pasta no arranque (re-scan sob demanda = sub futura).
  */
 fun main(args: Array<String>) {
@@ -54,6 +54,13 @@ fun main(args: Array<String>) {
         println("Varias interfaces LAN: $lanIps -> usando a 1a ($host). Override: --host <ip>.")
     }
 
+    if (isWildcardHost(host)) {
+        System.err.println(
+            "WARNING: --host $host expoe o agente em TODAS as interfaces de rede (inclusive WAN/VPN). " +
+                "O trafego e HTTP em claro e o token vai na URL. Use so em rede confiavel."
+        )
+    }
+
     val token = UUID.randomUUID().toString().replace("-", "")
 
     println()
@@ -70,7 +77,8 @@ fun main(args: Array<String>) {
         println(qrToAnsi(pairQrMatrix(payload)))
     }.onFailure { System.err.println("QR indisponível: ${it.message}") }
     println("Payload: $payload")
-    println("Bind: $host:$port (LAN-only; nunca 0.0.0.0). Ctrl+C p/ parar.")
+    val scope = if (isWildcardHost(host)) "TODAS as interfaces!" else "LAN-only"
+    println("Bind: $host:$port ($scope). Ctrl+C p/ parar.")
     println()
 
     val engine = embeddedServer(CIO, host = host, port = port) {
