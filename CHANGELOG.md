@@ -5,6 +5,27 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-28
+
+### Removido
+- **Sincronização com o PC (Desktop) da 1.7.0 foi removida.** O recurso não será usado. Saíram:
+  a tela **CFG → [7] DESKTOP**, o pareamento (IP/porta + token, QR e link `mpx://pair`), a
+  biblioteca remota e o streaming do PC, a sincronização offline das favoritas e o botão
+  **REMOVER OFFLINE**, a descoberta automática na rede local e o agente do PC (`:desktop-agent`).
+- O app volta a **bloquear tráfego HTTP em claro**, como na 1.6.1: todos os serviços usados
+  (letras, GitHub, YouTube) são só HTTPS.
+
+### Alterado
+- **Limpeza automática do pareamento**: ao abrir a 1.7.1 pela primeira vez, o app apaga o endereço
+  e o token do PC que a 1.7.0 tinha salvo, e o índice das faixas sincronizadas. Nada é feito em
+  instalações que nunca usaram o recurso.
+- As músicas que a 1.7.0 copiou para `Music/MPX` **não são apagadas**: são suas e continuam na
+  biblioteca como faixas locais comuns.
+- Faixas do PC que estavam em playlists ou favoritas deixam de aparecer (como um arquivo apagado);
+  a cópia offline em `Music/MPX`, se houver, continua tocando normalmente.
+- Mensagens de erro do player ficaram genéricas (sem referência ao PC). Os erros continuam
+  aparecendo na tela e no log local.
+
 ## [1.7.0] - 2026-11-27
 
 ### Adicionado
