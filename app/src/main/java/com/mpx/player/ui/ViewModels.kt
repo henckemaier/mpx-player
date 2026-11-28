@@ -217,7 +217,7 @@ class LibraryViewModel(private val app: AppContainer) : ViewModel() {
         val artists = lib.artists.filter { ok(it.name) }.let { if (asc) it else it.reversed() }
         val tracks = lib.tracks.filter { ok(it.title, it.artist, it.album, it.displayName) }
             .sortedBy { it.title.uppercase() }.let { if (asc) it else it.reversed() }
-        val playlistUis = pls.map { PlaylistUi(it.id, it.name, it.photo, it.trackKeys.size, it.locked) }
+        val playlistUis = pls.map { PlaylistUi(it.id, it.name, it.photo, PlaylistLogic.visibleCount(it.trackKeys, lib.scanned) { k -> lib.trackByKey(k) != null }, it.locked) }
         val openedPl = opened?.let { id ->
             pls.firstOrNull { it.id == id }?.let { p ->
                 OpenedPlaylist(p.id, p.name, p.photo, p.locked, lib.tracksForKeys(p.trackKeys))

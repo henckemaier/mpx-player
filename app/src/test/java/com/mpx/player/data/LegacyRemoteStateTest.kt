@@ -42,6 +42,26 @@ class LegacyRemoteStateTest {
         assertEquals("/data/x.jpg", map["music/a.mp3"]?.cover)
     }
 
+    /** Cenário da Lupa: FAVORITOS = LocalA + Alfa (remota, sincronizada) + Beta (remota). */
+    @Test fun `contador conta so faixas presentes na biblioteca`() {
+        val fav = listOf("music/locala.mp3", "alfa.mp3", "beta.mp3")
+        val biblioteca = setOf("music/locala.mp3", "music/mpx/alfa [abc12345].mp3")
+        assertEquals(1, PlaylistLogic.visibleCount(fav, scanned = true) { it in biblioteca })
+        // nada é apagado: as chaves seguem salvas
+        assertEquals(3, fav.size)
+    }
+
+    @Test fun `favorita que existe localmente com a mesma chave continua contando`() {
+        // chave remota da 1.7.0 = caminho relativo no PC; se coincidir com uma faixa local, ela casa
+        val fav = listOf("music/a.mp3", "music/b.mp3")
+        assertEquals(2, PlaylistLogic.visibleCount(fav, scanned = true) { it in setOf("music/a.mp3", "music/b.mp3") })
+    }
+
+    @Test fun `antes do primeiro scan mostra o total salvo`() {
+        assertEquals(3, PlaylistLogic.visibleCount(listOf("a", "b", "c"), scanned = false) { false })
+        assertEquals(0, PlaylistLogic.visibleCount(emptyList(), scanned = true) { true })
+    }
+
     @Test fun `json corrompido nao quebra`() {
         assertEquals(emptyList<Any>(), PlaylistLogic.fromJson("{lixo").filter { it.id != Playlist.FAVORITES_ID })
         assertEquals(emptyMap<String, Any>(), OverrideLogic.fromJson("{lixo"))
