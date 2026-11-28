@@ -5,6 +5,33 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-27
+
+### Adicionado
+- **Sincronização com o PC** (novo): o app pode ler a biblioteca de música de um computador da rede
+  local e tocar as faixas dele. Para isso existe o agente desktop (`:desktop-agent`), que roda no PC
+  e serve a biblioteca pela rede local.
+- **Conectar ao PC** em **CFG → [7] DESKTOP**: por IP e porta com token, pelo QR de pareamento ou
+  por link (`mpx://pair`). Um link pede confirmação antes de conectar.
+- **Biblioteca remota**: navegar e tocar as músicas do PC, com streaming.
+- **Sincronização offline das favoritas**: copia as favoritas do PC para `Music/MPX`, com nome
+  legível. A cópia pode ser cancelada, e o botão **REMOVER OFFLINE** apaga as cópias.
+
+### Segurança
+- Conexão com o PC só para **IPv4 privado ou loopback**, digitado ou vindo do QR. Nomes de domínio
+  não são aceitos.
+- Redirecionamentos HTTP desligados nas conexões com o agente.
+- O token do PC fica **fora do backup** do app e é mascarado nos logs.
+- O agente compara o token em tempo constante e limita tentativas (**429** em excesso).
+- **Tráfego HTTP em claro** é permitido na configuração de rede do app, porque o agente é alcançado
+  pelo IP da LAN e um certificado não cobre IPs arbitrários. Os serviços públicos usados pelo app
+  (letras, GitHub, YouTube) continuam **só HTTPS**. Esta é uma decisão documentada; HTTPS com
+  certificado próprio fica para uma versão futura.
+
+### Corrigido
+- Mensagens de erro de conexão com o PC agora dizem o que aconteceu (agente offline, token errado).
+- Erros do player aparecem na tela, em vez de passarem em silêncio.
+
 ## [1.6.1] - 2026-11-27
 
 ### Corrigido

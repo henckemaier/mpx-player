@@ -39,6 +39,9 @@ Pacote: `com.mpx.player` · minSdk 29 (Android 10) · arm64-v8a · 100% Kotlin +
 - ⬇️ **Downloader de playlists do YouTube Music → MP3** (yt‑dlp), com **capa** e **letra** embutidas.
 - 📂 **Playlists** (criar / editar / favoritar), **edição de faixa** (título / capa / letra, só dentro
   do app) e **importação de `.m3u` / `.pls`**.
+- 🖥️➡️📱 **Sincronização com o PC**: conecta ao agente desktop na rede local (CFG → DESKTOP), navega e
+  toca a biblioteca do PC, e copia as favoritas para `Music/MPX` offline. Detalhes e segurança em
+  [`desktop-agent/README.md`](desktop-agent/README.md).
 - 🔁 **Modo paisagem** dedicado em todas as telas (navegação vira barra lateral).
 - 🚀 **Auto‑update in‑app** (CFG → SOBRE → CHECK UPDATE) pelas GitHub Releases.
 
