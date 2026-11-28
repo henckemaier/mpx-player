@@ -36,6 +36,12 @@ fun Application.mpxAgentModule(
     token: String,
     version: String,
     limiter: AuthRateLimiter = AuthRateLimiter(),
+    /**
+     * Limite próprio p/ /stream e /art: depois de reiniciar o agente (token novo) o app ainda tem o
+     * token velho em URLs de prefetch do player e de capas — com o limite de 10 o próprio dono era
+     * bloqueado. O token tem 128 bits, então 100/60s não torna força bruta viável.
+     */
+    mediaLimiter: AuthRateLimiter = AuthRateLimiter(maxFailures = 100),
 ) {
     install(ContentNegotiation) { json() }
     install(PartialContent)
@@ -58,8 +64,11 @@ fun Application.mpxAgentModule(
 
     // Gate de token ANTES do routing: Authorization: Bearer <token> OU ?token=<token>.
     intercept(ApplicationCallPipeline.Plugins) {
-        val ip = call.request.local.remoteHost
-        val wait = limiter.retryAfterSeconds(ip)
+        // remoteAddress = IP da conexão, SEM DNS reverso (remoteHost podia resolver nome).
+        val ip = call.request.local.remoteAddress
+        val path = call.request.path()
+        val lim = if (path.startsWith("/stream/") || path.startsWith("/art/")) mediaLimiter else limiter
+        val wait = lim.retryAfterSeconds(ip)
         if (wait > 0) {
             call.response.header(HttpHeaders.RetryAfter, wait.toString())
             call.respondText("429 Too Many Requests\n", status = HttpStatusCode.TooManyRequests)
@@ -69,7 +78,7 @@ fun Application.mpxAgentModule(
         val bearer = auth?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
         val provided = bearer ?: call.request.queryParameters["token"]
         if (!tokenMatches(provided, token)) {
-            limiter.recordFailure(ip)
+            lim.recordFailure(ip)
             call.respond(HttpStatusCode.Unauthorized)
             return@intercept finish()
         }

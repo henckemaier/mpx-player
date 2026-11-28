@@ -100,6 +100,19 @@ class SecurityTest {
         assertEquals(HttpStatusCode.OK, client.get("/ping?token=$token").status)
     }
 
+    @Test fun falhasEmStreamEArte_naoBloqueiamLibrary_eTemLimiteProprio() = testApplication {
+        // Agente reiniciado: o app ainda tem o token velho em prefetch/capas -> varias falhas de midia.
+        application { mpxAgentModule(Library(emptyList()), token, "t", AuthRateLimiter(), AuthRateLimiter(maxFailures = 30)) }
+        repeat(15) {
+            assertEquals(HttpStatusCode.Unauthorized, client.get("/stream/x$it?token=velho").status)
+            assertEquals(HttpStatusCode.Unauthorized, client.get("/art/x$it?token=velho").status)
+        }
+        // 30 falhas de midia: /library (limite de API) segue liberado p/ o repareamento
+        assertEquals(HttpStatusCode.OK, client.get("/library") { header(HttpHeaders.Authorization, "Bearer $token") }.status)
+        // ...mas a propria midia atingiu o limite dela
+        assertEquals(HttpStatusCode.TooManyRequests, client.get("/stream/x?token=$token").status)
+    }
+
     // ---- 3) 500 generico ----
     @Test fun erro500_naoVazaMensagemNemStack() = testApplication {
         val f = File(tmp, "a.mp3").apply { writeBytes(byteArrayOf(1)) }

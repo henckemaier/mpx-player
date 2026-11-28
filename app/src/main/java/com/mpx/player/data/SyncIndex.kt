@@ -69,23 +69,47 @@ object SyncLogic {
 
     private val FORBIDDEN_NAME_CHARS = "/\\:*?\"<>|".toSet()
     private val WHITESPACE = Regex("\\s+")
-    private const val MAX_BASE_CHARS = 120
+    /**
+     * Limite da base do nome em BYTES UTF-8 (o FS limita o nome a 255 bytes, não a chars: um título
+     * CJK de 120 chars já passa de 255). 200 + " [id8].ext" fica folgado abaixo de 255.
+     */
+    private const val MAX_BASE_BYTES = 200
 
-    /** Remove / \ : * ? " < > | e controles, colapsa espaços e tira pontos/espaços das pontas. PURO. */
+    /**
+     * Remove / \ : * ? " < > |, controles (Cc) e caracteres de FORMATAÇÃO Unicode (Cf: U+202E RTL
+     * override, U+200B zero-width, U+FEFF, tags U+E00xx...), colapsa espaços e tira pontos/espaços das
+     * pontas. Opera por code point (pares substitutos inteiros). PURO.
+     */
     fun sanitizeNamePart(raw: String?): String {
         if (raw == null) return ""
-        val cleaned = raw.map { if (it in FORBIDDEN_NAME_CHARS || Character.isISOControl(it)) ' ' else it }
-            .joinToString("")
-            .replace(WHITESPACE, " ")
-            .trim(' ', '.')
-        return cleaned
+        val sb = StringBuilder(raw.length)
+        raw.codePoints().forEach { cp ->
+            val bad = (cp < 0x10000 && cp.toChar() in FORBIDDEN_NAME_CHARS) ||
+                Character.isISOControl(cp) ||
+                Character.getType(cp) == Character.FORMAT.toInt()
+            if (bad) sb.append(' ') else sb.appendCodePoint(cp)
+        }
+        return sb.toString().replace(WHITESPACE, " ").trim(' ', '.')
     }
 
-    private fun String.takeCodePoints(max: Int): String =
-        if (length <= max) this else {
-            val end = if (Character.isHighSurrogate(this[max - 1])) max - 1 else max
-            substring(0, end).trimEnd()
+    /** Prefixo com no máximo [maxBytes] bytes em UTF-8, sem partir code point. PURO. */
+    internal fun String.takeUtf8Bytes(maxBytes: Int): String {
+        var bytes = 0
+        var i = 0
+        while (i < length) {
+            val cp = codePointAt(i)
+            val n = when {
+                cp < 0x80 -> 1
+                cp < 0x800 -> 2
+                cp < 0x10000 -> 3
+                else -> 4
+            }
+            if (bytes + n > maxBytes) break
+            bytes += n
+            i += Character.charCount(cp)
         }
+        return substring(0, i).trimEnd(' ', '.')
+    }
 
     private fun knownTag(s: String?): String? =
         s?.trim()?.takeIf { it.isNotEmpty() && !it.equals("<unknown>", ignoreCase = true) }
@@ -100,7 +124,8 @@ object SyncLogic {
         val t = sanitizeNamePart(knownTag(title))
         if (t.isEmpty()) return "$remoteId.$ext"
         val a = sanitizeNamePart(knownTag(artist))
-        val base = (if (a.isEmpty()) t else "$a - $t").takeCodePoints(MAX_BASE_CHARS)
+        val base = (if (a.isEmpty()) t else "$a - $t").takeUtf8Bytes(MAX_BASE_BYTES)
+        if (base.isEmpty()) return "$remoteId.$ext"
         return "$base [${remoteId.take(8)}].$ext"
     }
 

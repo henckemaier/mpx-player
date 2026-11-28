@@ -76,13 +76,33 @@ class SyncLogicTest {
         assertEquals("abc.mp3", SyncLogic.displayNameFor("abc", "x", null, "audio/mpeg"))
     }
 
-    @Test fun nomeLegivelLimitaTamanho() {
+    @Test fun nomeLegivelLimitaTamanhoEmBytes() {
         val suffix = " [abcdef12].mp3"
         val n = SyncLogic.displayNameFor("abcdef123", "A".repeat(300), "T", "audio/mpeg")
         assertTrue(n.endsWith(suffix))
-        assertTrue(n.length <= 120 + suffix.length)
+        assertTrue(n.toByteArray(Charsets.UTF_8).size <= 255)
         // não corta par substituto (emoji) ao meio
         val e = SyncLogic.displayNameFor("abcdef123", null, "🎵".repeat(100), "audio/mpeg")
         assertFalse(e.dropLast(suffix.length).last().isHighSurrogate())
+        assertTrue(e.toByteArray(Charsets.UTF_8).size <= 255)
+    }
+
+    @Test fun tituloCjkLongoCabeEm255Bytes() {
+        // 120 chars CJK = 360 bytes: antes passava do limite de 255 BYTES do nome no FS
+        val cjk = "日本語の曲名".repeat(40)
+        val n = SyncLogic.displayNameFor("abcdef123", "アーティスト", cjk, "audio/flac")
+        assertTrue(n, n.toByteArray(Charsets.UTF_8).size <= 255)
+        assertTrue(n.endsWith(" [abcdef12].flac"))
+        assertTrue(n.startsWith("アーティスト - 日本語"))
+    }
+
+    @Test fun removeCaracteresDeFormatacaoUnicode() {
+        // U+202E (RTL override) faria "evil[gpj].mp3" parecer outra extensão; U+200B/U+FEFF invisíveis;
+        // U+E0041 (tag, plano suplementar = par substituto).
+        val t = "abc‮gpj.exe​ x﻿y 󠁁z"
+        val s = SyncLogic.sanitizeNamePart(t)
+        assertFalse(s.any { Character.getType(it) == Character.FORMAT.toInt() })
+        assertFalse(s.contains('\uDB40'))
+        assertEquals("abc gpj.exe x y z", s)
     }
 }

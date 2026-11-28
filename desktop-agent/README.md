@@ -30,7 +30,9 @@ não-loopback) detectado; com várias interfaces ele loga todas e usa a 1ª (ove
   O padrão é o 1º IPv4 site-local (LAN). Se você forçar um bind curinga (`0.0.0.0`/`::`), o
   agente imprime um `WARNING` no console.
 - **Token**: aleatório por execução, comparado em **tempo constante**. Após **10 falhas em 60 s**
-  o IP de origem recebe **429** (com `Retry-After`) por 60 s.
+  em `/ping`/`/library` o IP de origem recebe **429** (com `Retry-After`) por 60 s; `/stream` e
+  `/art` têm limite próprio de **100** (após reiniciar o agente, o app ainda tenta mídia com o
+  token velho — sem isso o próprio dono ficava bloqueado). O IP é o do socket (sem DNS reverso).
 - **Erros 500** retornam só `500 internal error`; o detalhe fica no log local do agente.
 - **Escopo de arquivos**: `/stream` e `/art` só servem arquivos **indexados** no scan (id =
   hash do caminho relativo; não há acesso por caminho). O scan **não segue symlinks/junctions
