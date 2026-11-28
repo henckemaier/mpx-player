@@ -1,0 +1,115 @@
+package com.mpx.desktop
+
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.http.content.LocalFileContent
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
+import io.ktor.server.application.install
+import io.ktor.server.plugins.autohead.AutoHeadResponse
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.partialcontent.PartialContent
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.header
+import io.ktor.server.request.path
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
+import java.util.logging.Level
+import java.util.logging.Logger
+
+/**
+ * Modulo Ktor do agente: /ping //library //stream(Range) //art, TODOS atras de [token]
+ * (Bearer OU ?token=; ausente/errado -> 401; token comparado em tempo constante). [limiter]:
+ * 10 falhas de token em 60s por IP de origem -> 429 por 60s. Erros 500 tem corpo generico. PartialContent do Ktor trata Range/206 (nao
+ * implementamos Range na mao). Funcao separada do Main p/ o ktor-server-test-host exercitar
+ * auth e Range sem subir socket/PC real.
+ */
+fun Application.mpxAgentModule(
+    library: Library,
+    token: String,
+    version: String,
+    limiter: AuthRateLimiter = AuthRateLimiter(),
+    /**
+     * Limite próprio p/ /stream e /art: depois de reiniciar o agente (token novo) o app ainda tem o
+     * token velho em URLs de prefetch do player e de capas — com o limite de 10 o próprio dono era
+     * bloqueado. O token tem 128 bits, então 100/60s não torna força bruta viável.
+     */
+    mediaLimiter: AuthRateLimiter = AuthRateLimiter(maxFailures = 100),
+) {
+    install(ContentNegotiation) { json() }
+    install(PartialContent)
+    // HEAD /stream/{id} -> roda o GET e descarta o corpo (200 + headers, incl. Accept-Ranges).
+    // Alguns players fazem HEAD antes do GET+Range; sem isto cairia em 404.
+    install(AutoHeadResponse)
+    install(StatusPages) {
+        status(HttpStatusCode.Unauthorized) { call, status ->
+            call.respondText("401 Unauthorized\n", status = status)
+        }
+        status(HttpStatusCode.NotFound) { call, status ->
+            call.respondText("404 Not Found\n", status = status)
+        }
+        exception<Throwable> { call, cause ->
+            // Detalhe so no log local; o cliente recebe corpo generico (sem message/stack/caminhos).
+            Logger.getLogger("mpx-agent").log(Level.SEVERE, "erro 500 em ${call.request.path()}" /* sem query: nao loga o token */, cause)
+            call.respondText("500 internal error\n", status = HttpStatusCode.InternalServerError)
+        }
+    }
+
+    // Gate de token ANTES do routing: Authorization: Bearer <token> OU ?token=<token>.
+    intercept(ApplicationCallPipeline.Plugins) {
+        // remoteAddress = IP da conexão, SEM DNS reverso (remoteHost podia resolver nome).
+        val ip = call.request.local.remoteAddress
+        val path = call.request.path()
+        val lim = if (path.startsWith("/stream/") || path.startsWith("/art/")) mediaLimiter else limiter
+        val wait = lim.retryAfterSeconds(ip)
+        if (wait > 0) {
+            call.response.header(HttpHeaders.RetryAfter, wait.toString())
+            call.respondText("429 Too Many Requests\n", status = HttpStatusCode.TooManyRequests)
+            return@intercept finish()
+        }
+        val auth = call.request.header(HttpHeaders.Authorization)
+        val bearer = auth?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
+        val provided = bearer ?: call.request.queryParameters["token"]
+        if (!tokenMatches(provided, token)) {
+            lim.recordFailure(ip)
+            call.respond(HttpStatusCode.Unauthorized)
+            return@intercept finish()
+        }
+    }
+
+    routing {
+        get("/ping") {
+            call.respond(PingDto(name = "MPX Desktop Agent", version = version, trackCount = library.count))
+        }
+        get("/library") {
+            call.respond(library.dtos)
+        }
+        get("/stream/{id}") {
+            val id = call.parameters["id"].orEmpty()
+            val file = library.file(id)
+            if (file == null || !file.isFile) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+            val mime = library.mime(id) ?: "application/octet-stream"
+            // LocalFileContent + PartialContent -> Accept-Ranges: bytes e 206 quando houver Range.
+            call.respond(LocalFileContent(file, contentType = ContentType.parse(mime)))
+        }
+        get("/art/{id}") {
+            val id = call.parameters["id"].orEmpty()
+            val art = library.art(id)
+            if (art == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+            call.respondBytes(art.bytes, ContentType.parse(art.contentType))
+        }
+    }
+}

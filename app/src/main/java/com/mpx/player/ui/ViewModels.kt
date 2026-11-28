@@ -15,8 +15,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mpx.player.AppContainer
 import com.mpx.player.MpxApp
+import com.mpx.player.data.DiscoveredAgent
 import com.mpx.player.data.LibraryState
 import com.mpx.player.data.PlaylistLogic
+import com.mpx.player.data.RemoteState
+import com.mpx.player.data.SyncLogic
+import com.mpx.player.data.SyncManager
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
 import com.mpx.player.model.EqPresets
@@ -67,6 +71,7 @@ data class PlayerUi(
     val shuffle: Boolean = false,
     val repeat: RepeatMode = RepeatMode.OFF,
     val sourceLabel: String = "",
+    val error: String? = null,
 ) {
     val totalMs: Long get() = queue.sumOf { it.durationMs }
     val remainingMs: Long
@@ -92,6 +97,7 @@ class PlayerViewModel(private val app: AppContainer) : ViewModel() {
             shuffle = p.shuffle,
             repeat = p.repeat,
             sourceLabel = p.sourceLabel,
+            error = p.error,
         )
     }.state(this, PlayerUi())
 
@@ -443,6 +449,40 @@ class SettingsViewModel(private val app: AppContainer) : ViewModel() {
 
     suspend fun exportCrashLog(): java.io.File? = kotlinx.coroutines.withContext(Dispatchers.IO) { app.crashLog.export() }
     fun clearCrashLog() { viewModelScope.launch(Dispatchers.IO) { app.crashLog.clear() } }
+
+    // ---- Conectar ao agente desktop (desktop-sync)
+    val desktop: StateFlow<RemoteState> = app.remote.state.state(this, RemoteState())
+
+    /** Agentes descobertos por mDNS (liga/desliga a descoberta conforme a UI assina). */
+    val discovered: StateFlow<List<DiscoveredAgent>> = app.discovery.discover().state(this, emptyList())
+
+    fun connectDesktop(host: String, token: String) = app.remote.connect(host, token)
+    fun disconnectDesktop() = app.remote.disconnect()
+
+    // ---- Sync OFFLINE das favoritas (desktop-sync sub-4)
+    val sync: StateFlow<SyncManager.SyncState> = app.syncManager.state.state(this, SyncManager.SyncState())
+
+    /** Favoritas REMOTAS que ainda faltam baixar (N do botão). */
+    val syncPending: StateFlow<Int> = combine(app.library.state, app.playlists.playlists, app.syncIndex.index) { lib, pls, idx ->
+        SyncLogic.syncDiff(favoriteRemotes(lib, pls), idx).size
+    }.state(this, 0)
+
+    /** Quantas offline já existem (habilita "REMOVER OFFLINE"). */
+    val offlineCount: StateFlow<Int> = app.syncIndex.index.map { it.size }.state(this, 0)
+
+    private fun favoriteRemotes(lib: LibraryState, pls: List<Playlist>): List<Track> {
+        val favKeys = pls.firstOrNull { it.id == Playlist.FAVORITES_ID }?.trackKeys?.toSet() ?: emptySet()
+        return lib.tracks.filter { it.remoteId != null && it.isStreamOnly && it.key in favKeys }
+    }
+
+    fun syncFavorites() {
+        val favRemotas = favoriteRemotes(app.library.state.value, app.playlists.playlists.value)
+        app.syncManager.syncFavorites(favRemotas)
+    }
+
+    fun cancelSync() = app.syncManager.cancel()
+    fun removeOffline() = app.syncManager.removeAllOffline()
+    fun clearSyncResult() = app.syncManager.clearResult()
 
     // ---- Auto-update do app (GitHub Releases)
     val update = app.updater.state

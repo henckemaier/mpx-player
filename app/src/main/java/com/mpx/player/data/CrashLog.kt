@@ -137,11 +137,19 @@ class CrashLog(
             maxChars: Int = DEFAULT_MAX_ENTRY_CHARS,
         ): String {
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }
-            val headline = (error.message ?: "").lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty()
+            // Defesa em profundidade: QUALQUER registro (FATAL, Downloader, desktop) passa por
+            // maskSecrets — URL com ?token=/&t=, Bearer e variantes URL-encoded nunca vão em claro.
+            val headline = maskSecrets(error.message ?: "").lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty()
             val title = buildString {
                 append(ENTRY_MARK).append(fmt.format(Date(timeMs))).append(" [").append(tag).append("] ")
-                append(error.javaClass.simpleName.ifEmpty { error.javaClass.name })
-                if (headline.isNotEmpty()) append(": ").append(headline)
+                // SanitizedException já traz a classe original no início da mensagem (e no release o
+                // nome dela seria minificado, ex. "c:"): não repete o prefixo.
+                if (error is SanitizedException && headline.isNotEmpty()) {
+                    append(headline)
+                } else {
+                    append(error.javaClass.simpleName.ifEmpty { error.javaClass.name })
+                    if (headline.isNotEmpty()) append(": ").append(headline)
+                }
             }
             val stack = StringWriter().also { sw -> PrintWriter(sw).use { error.printStackTrace(it) } }.toString()
             var body = buildString {
@@ -149,6 +157,7 @@ class CrashLog(
                 if (thread != null) appendLine("thread: $thread")
                 append(stack.trimEnd())
             }
+            body = maskSecrets(body)
             if (body.length > maxChars) body = body.take(maxChars) + "\n" + TRUNCATED_MARK
             // Só o título pode começar com ENTRY_MARK: uma mensagem multilinha (o stack trace a repete
             // inteira) com linha "===== ..." seria contada como registro extra. Indenta essas linhas.

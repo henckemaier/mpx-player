@@ -5,13 +5,17 @@ import android.content.Context
 import android.os.Build
 import com.mpx.player.data.CoverArtLoader
 import com.mpx.player.data.CrashLog
+import com.mpx.player.data.DesktopDiscovery
 import com.mpx.player.data.Downloader
 import com.mpx.player.data.LibraryRepository
 import com.mpx.player.data.LyricsRepository
 import com.mpx.player.data.OverrideRepository
 import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.PlaylistRepository
+import com.mpx.player.data.RemoteLibrarySource
 import com.mpx.player.data.SettingsRepository
+import com.mpx.player.data.SyncIndex
+import com.mpx.player.data.SyncManager
 import com.mpx.player.data.UpdateRepository
 import com.mpx.player.playback.PlayerController
 import java.io.File
@@ -20,12 +24,16 @@ import java.io.File
 class AppContainer(val context: Context, val crashLog: CrashLog) {
     val settings = SettingsRepository(context)
     val overrides = OverrideRepository(context)
-    val library = LibraryRepository(context, overrides)
+    val remote = RemoteLibrarySource(settings, crashLog)
+    val discovery = DesktopDiscovery(context)
+    val syncIndex = SyncIndex(context)
+    val library = LibraryRepository(context, overrides, remote, syncIndex)
+    val syncManager = SyncManager(context, library, syncIndex)
     val lyrics = LyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)
     val playlists = PlaylistRepository(context)
     val covers = CoverArtLoader(context)
-    val player = PlayerController(context)
+    val player = PlayerController(context, crashLog)
     val downloader = Downloader(context, library, lyrics, settings, crashLog)
     val updater = UpdateRepository(context)
 }

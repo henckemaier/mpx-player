@@ -37,10 +37,13 @@ data class LibraryState(
 class LibraryRepository(
     private val context: Context,
     private val overrides: OverrideRepository,
+    private val remote: RemoteLibrarySource,
+    private val syncIndex: SyncIndex,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private var rawTracks: List<Track> = emptyList()
+    @Volatile private var remoteTracks: List<Track> = emptyList()
     private var scanned = false
     private var newCount = 0
     @Volatile private var scanningFlag = false
@@ -51,6 +54,12 @@ class LibraryRepository(
     init {
         // Re-aplica os overrides (título/capa) sem re-consultar o MediaStore quando eles mudam.
         scope.launch { overrides.overrides.drop(1).collect { rebuild() } }
+        // Faixas remotas do agente desktop: mescladas POR CIMA do local (dedup por key). Quando
+        // não há conexão a lista é vazia -> o estado fica byte-idêntico ao só-local.
+        scope.launch { remote.tracks.collect { remoteTracks = it; rebuild() } }
+        // Índice de sincronizadas (sub-4): marca [OFFLINE] + funde a cópia local com o stream.
+        // Índice vazio -> rebuild idêntico ao da sub-2/sub-1.
+        scope.launch { syncIndex.index.drop(1).collect { rebuild() } }
     }
 
     suspend fun scan() {
@@ -71,10 +80,15 @@ class LibraryRepository(
     @Synchronized
     private fun rebuild() {
         val ov = overrides.overrides.value
-        val tracks = if (ov.isEmpty()) rawTracks else rawTracks.map { t ->
+        val localTracks = if (ov.isEmpty()) rawTracks else rawTracks.map { t ->
             val o = ov[t.key] ?: return@map t
             t.copy(title = o.title ?: t.title, coverOverride = o.cover ?: t.coverOverride)
         }
+        // União com o remoto (dedup por key, local ganha). remoteTracks vazio -> == localTracks.
+        val merged = mergeLibrary(localTracks, remoteTracks)
+        // Sub-4: aplica o índice de sincronizadas (some o stream cuja cópia local existe, marca
+        // [OFFLINE]). Índice vazio/sem cópia -> devolve `merged` intacto.
+        val tracks = SyncLogic.applySyncIndex(merged, syncIndex.index.value)
         val albums = tracks.groupBy { it.albumId }.map { (id, list) ->
             Album(
                 id = id,

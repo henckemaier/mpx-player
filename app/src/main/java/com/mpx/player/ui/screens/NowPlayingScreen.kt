@@ -514,6 +514,7 @@ private fun CmdLog(ui: PlayerUi, tech: TechInfo, onEmpty: () -> Unit) {
         lines.forEach { Txt(it, size = 11.sp, color = c.dim, lineHeight = 17.sp) }
         val last = when {
             t == null -> "> WAITING"
+            ui.error != null -> "> ${ui.error}"
             ui.isPlaying -> "> PLAY ${t.displayName.uppercase()}"
             else -> "> PAUSE ${t.displayName.uppercase()}"
         }

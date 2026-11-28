@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -38,6 +39,8 @@ data class PlayerState(
     val shuffle: Boolean = false,
     val repeat: RepeatMode = RepeatMode.OFF,
     val sourceLabel: String = "",
+    /** Último erro do player (texto p/ o CMD.LOG); null = sem erro. Limpo ao tocar/trocar de faixa. */
+    val error: String? = null,
 ) {
     val currentId: Long? get() = queue.getOrNull(index)
 }
@@ -45,7 +48,11 @@ data class PlayerState(
 data class VolumeState(val level: Int = 0, val max: Int = 15, val muted: Boolean = false)
 
 /** Fachada da UI sobre o MediaController conectado ao [PlaybackService]. */
-class PlayerController(private val context: Context) {
+class PlayerController(
+    private val context: Context,
+    /** Log local p/ falhas de reprodução (o CrashLog mascara ?token= da URI do agente). */
+    private val crashLog: com.mpx.player.data.CrashLog? = null,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controller: MediaController? = null
@@ -61,6 +68,25 @@ class PlayerController(private val context: Context) {
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
+
+        // Antes nada tratava o erro: com o agente desktop parado a faixa remota ficava em 00:00,
+        // PAUSE e sem nenhuma mensagem. Agora vira linha "> ERRO ..." no CMD.LOG e vai p/ o log.
+        override fun onPlayerError(error: PlaybackException) {
+            val id = _state.value.currentId
+            val remote = id != null && id < 0 && id != -1L
+            val msg = playbackErrorMessage(error.errorCode, remote)
+            _state.update { it.copy(error = reducePlayerError(it.error, PlayerErrorEvent.ERROR, msg)) }
+            // errorCodeName (ex.: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED) não é minificado pelo R8,
+            // ao contrário do nome da classe; a causa original segue no stack (URI c/ token mascarada).
+            // record faz I/O (append + releitura p/ contagem, até ~256 KB): fora da main thread.
+            val tag = if (remote) "PLAYER-DESKTOP" else "PLAYER"
+            val wrapped = IllegalStateException("${error.errorCodeName}: ${error.message}", error)
+            crashLog?.let { log -> scope.launch(Dispatchers.IO) { log.record(tag, wrapped) } }
+        }
+
+        // Transição NÃO limpa o erro: o MediaController reentrega a transição (mascarada no
+        // setMediaItems) junto com o estado real da sessão, às vezes depois do onPlayerError.
+        // Ver reducePlayerError (reteste da Lupa: a mensagem sumia da tela).
     }
 
     fun connect() {
@@ -84,6 +110,7 @@ class PlayerController(private val context: Context) {
                 queue = ids,
                 index = if (ids.isEmpty()) -1 else c.currentMediaItemIndex,
                 isPlaying = c.isPlaying,
+                error = if (c.isPlaying) reducePlayerError(it.error, PlayerErrorEvent.STARTED_PLAYING) else it.error,
                 positionMs = c.currentPosition.coerceAtLeast(0),
                 durationMs = c.duration.takeIf { d -> d > 0 } ?: 0L,
                 shuffle = c.shuffleModeEnabled,
@@ -111,7 +138,7 @@ class PlayerController(private val context: Context) {
     fun play(tracks: List<Track>, startIndex: Int, label: String) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
-        _state.update { it.copy(sourceLabel = label) }
+        _state.update { it.copy(sourceLabel = label, error = null) }
         c.setMediaItems(tracks.map { it.toMediaItem() }, startIndex.coerceIn(0, tracks.lastIndex), 0L)
         c.shuffleModeEnabled = false
         c.prepare()
@@ -121,16 +148,19 @@ class PlayerController(private val context: Context) {
     fun toggle() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else {
+            _state.update { it.copy(error = null) }
             if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0)
             c.prepare(); c.play()
         }
     }
 
     fun play() = controller?.run { prepare(); play() }
-    fun next() = controller?.seekToNext()
-    fun previous() = controller?.seekToPrevious()
+    private fun clearErrorByUser() = _state.update { it.copy(error = reducePlayerError(it.error, PlayerErrorEvent.USER_ACTION)) }
+
+    fun next() { clearErrorByUser(); controller?.seekToNext() }
+    fun previous() { clearErrorByUser(); controller?.seekToPrevious() }
     fun seekToFraction(f: Float) = controller?.run { if (duration > 0) seekTo((duration * f.coerceIn(0f, 1f)).toLong()) }
-    fun seekToIndex(i: Int) = controller?.run { seekTo(i, 0L); prepare(); play() }
+    fun seekToIndex(i: Int) { clearErrorByUser(); controller?.run { seekTo(i, 0L); prepare(); play() } }
     fun toggleShuffle() = controller?.run { shuffleModeEnabled = !shuffleModeEnabled }
     fun cycleRepeat() = controller?.run {
         repeatMode = when (repeatMode) {
@@ -196,7 +226,7 @@ class PlayerController(private val context: Context) {
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setArtworkUri(ContentUris.withAppendedId(ALBUM_ART, albumId))
+                .setArtworkUri(artUri ?: ContentUris.withAppendedId(ALBUM_ART, albumId))
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(Bundle().apply { putLong("albumId", albumId) })

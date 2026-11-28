@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.mpx.player.model.Album
 import com.mpx.player.model.Artist
 import com.mpx.player.model.Track
+import com.mpx.player.model.TrackOrigin
 import com.mpx.player.ui.LibFilter
 import com.mpx.player.ui.LibraryUi
 import com.mpx.player.ui.LibraryViewModel
@@ -345,6 +346,14 @@ private fun TrackRow(
             Txt("${t.artist.uppercase()} · ${t.album.uppercase()}", size = 10.sp, color = if (playing) c.onAccent else c.dim)
         }
         if (favorite) Image(MpxIcons.BookmarkOn, null, Modifier.size(12.dp).padding(start = 4.dp), colorFilter = ColorFilter.tint(fg))
+        // Marca desktop-sync: REMOTE não-sincronizada = [STREAM]; cópia local sincronizada
+        // (origin LOCAL + remoteId tag da sub-4) = [OFFLINE]. Local comum fica SEM marca (byte-idêntico).
+        when {
+            t.origin == TrackOrigin.REMOTE ->
+                Txt("[STREAM]", Modifier.padding(start = 4.dp), size = 9.sp, color = if (playing) c.onAccent else c.dim)
+            t.remoteId != null ->
+                Txt("[OFFLINE]", Modifier.padding(start = 4.dp), size = 9.sp, color = if (playing) c.onAccent else c.dim)
+        }
         if (trailing != null) trailing()
         else Txt(formatTime(t.durationMs), Modifier.width(52.dp), size = 12.sp, color = fg, align = TextAlign.End)
     }
