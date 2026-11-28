@@ -97,6 +97,13 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLastScan(v: Long) = context.dataStore.edit { it[K.lastScan] = v }
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
 
+    /**
+     * Migração 1.7.1: limpa pareamento/índice do desktop-sync removido (ver [LegacyDesktopCleanup]).
+     * Idempotente e tolerante a falha; não mexe nas músicas do usuário.
+     */
+    suspend fun purgeLegacyDesktop(onError: (Throwable) -> Unit = {}): LegacyDesktopCleanup.Result =
+        LegacyDesktopCleanup.run(context.filesDir, context.dataStore, onError)
+
     suspend fun updateEq(transform: (EqSettings) -> EqSettings) = context.dataStore.edit { p ->
         val cur = p.toSettings().eq
         val n = transform(cur)

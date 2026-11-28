@@ -5,30 +5,26 @@ import android.content.Context
 import android.os.Build
 import com.mpx.player.data.CoverArtLoader
 import com.mpx.player.data.CrashLog
-import com.mpx.player.data.DesktopDiscovery
 import com.mpx.player.data.Downloader
 import com.mpx.player.data.LibraryRepository
 import com.mpx.player.data.LyricsRepository
 import com.mpx.player.data.OverrideRepository
 import com.mpx.player.data.PlaylistImporter
 import com.mpx.player.data.PlaylistRepository
-import com.mpx.player.data.RemoteLibrarySource
 import com.mpx.player.data.SettingsRepository
-import com.mpx.player.data.SyncIndex
-import com.mpx.player.data.SyncManager
 import com.mpx.player.data.UpdateRepository
 import com.mpx.player.playback.PlayerController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
 
 /** Injeção manual de dependências: um container por processo. */
 class AppContainer(val context: Context, val crashLog: CrashLog) {
     val settings = SettingsRepository(context)
     val overrides = OverrideRepository(context)
-    val remote = RemoteLibrarySource(settings, crashLog)
-    val discovery = DesktopDiscovery(context)
-    val syncIndex = SyncIndex(context)
-    val library = LibraryRepository(context, overrides, remote, syncIndex)
-    val syncManager = SyncManager(context, library, syncIndex)
+    val library = LibraryRepository(context, overrides)
     val lyrics = LyricsRepository(context)
     val playlistImporter = PlaylistImporter(context)
     val playlists = PlaylistRepository(context)
@@ -50,6 +46,15 @@ class MpxApp : Application() {
         )
         installCrashHandler(crashLog)
         container = AppContainer(this, crashLog)
+        // Migração 1.7.0 -> 1.7.1 (desktop-sync removido): apaga token/pareamento e o índice do sync.
+        // Fora da main thread; falha só vai p/ o log local (sem valores) e o app segue normalmente.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching {
+                val r = container.settings.purgeLegacyDesktop { e -> crashLog.record("MIGRACAO", e) }
+                // Só contagens/caminhos fixos (nunca valores): confirmação p/ QA via logcat.
+                if (r.changed) android.util.Log.i("MPX", "desktop-sync legado removido: arquivos=${r.removedFiles} chaves=${r.removedKeys}")
+            }.onFailure { e -> runCatching { crashLog.record("MIGRACAO", e) } }
+        }
     }
 
     /**

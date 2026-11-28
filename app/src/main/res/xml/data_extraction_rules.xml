@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- API 31+: o pareamento desktop (host + TOKEN) e o indice de sincronizadas NAO vao p/ backup nem transferencia. -->
+<!-- API 31+. LEGADO 1.7.0: o desktop-sync (pareamento host + TOKEN e indice de sincronizadas) foi
+     removido na 1.7.1 e a migracao apaga esses arquivos no start. A exclusao fica so como defesa:
+     um backup/transferencia feito antes do 1o start da 1.7.1 nao leva o token. Todo o resto do app
+     continua no backup como na 1.6.1. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="datastore/ds_pairing.preferences_pb" />
