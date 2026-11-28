@@ -85,7 +85,7 @@ Pacote: `com.mpx.player` · minSdk 29 (Android 10) · arm64-v8a · 100% Kotlin +
 | Download | **youtubedl-android** 0.18.1 (`library` + `ffmpeg`) — yt-dlp/Python/FFmpeg nativos |
 | JSON | `org.json` (nativo do Android) |
 | Build | **AGP** 8.7.3 · Gradle (Kotlin DSL) · `compileSdk`/`targetSdk` 35 · `minSdk` 29 · ABI `arm64-v8a` |
-| CI | **GitHub Actions** — compila o APK assinado e publica a release |
+| CI | **GitHub Actions** — checks de PR (build, testes JVM e lint), guarda anti-regressão do R8 e release assinada com o mapping |
 
 Injeção de dependências é **manual** (um `AppContainer` por processo em `MpxApp.kt`), sem framework.
 
@@ -149,7 +149,13 @@ mpx-player/
 │     │     ├─ components/              # Crt, Cover, Icons (widgets retrô)
 │     │     └─ theme/                   # MpxTheme (fósforos, fontes VT323 / JetBrains Mono)
 │     └─ res/                       # ícones, fontes, file_paths.xml
-├─ .github/workflows/release.yml    # CI: compila APK assinado + publica release
+├─ .github/workflows/
+│  ├─ pr-checks.yml                 # CI de PR: assembleDebug + testes + lint
+│  ├─ r8-guard.yml                  # CI: guarda anti-regressão do R8 (ZipExtraField)
+│  └─ release.yml                   # CI: release assinada + mapping (só com versão nova)
+├─ app/src/test/                    # testes unitários JVM
+├─ app/lint-baseline.xml            # baseline do lint (problemas pré-existentes)
+├─ tools/check-r8-zipextrafield.py  # verifica o dex minificado (ver RELEASING.md §7)
 ├─ docs/screenshots/                # imagens deste README
 ├─ CHANGELOG.md                     # histórico (Keep a Changelog)
 ├─ RELEASING.md                     # processo de release / versionamento
@@ -183,9 +189,14 @@ Pré-requisitos: **JDK 17** e o Android SDK (compileSdk 35).
 
 # Release (precisa da keystore de assinatura — veja abaixo)
 ./gradlew :app:assembleRelease
+
+# Testes unitários (JVM) e lint
+./gradlew :app:testDebugUnitTest
+./gradlew :app:lintDebug
 ```
 
-O APK sai em `app/build/outputs/apk/<tipo>/`.
+O APK sai em `app/build/outputs/apk/<tipo>/`. O lint usa um baseline (`app/lint-baseline.xml`); o
+processo de regerar o baseline e a guarda do R8 estão em **[RELEASING.md](RELEASING.md)** (§6 e §7).
 
 ### Assinatura de release
 
@@ -211,9 +222,12 @@ assinado com a chave verdadeira). No CI, os valores vêm de *secrets* do reposit
 
 ## Releases & auto-update
 
-A distribuição é por **GitHub Releases**. A cada push na `main`, o **GitHub Actions** compila o APK
-**assinado** e publica/atualiza a release `v<versionName>`. No app, **CFG → SOBRE → CHECK UPDATE**
-consulta a release mais recente, compara a versão e **baixa + instala** com um toque.
+A distribuição é por **GitHub Releases**. A `main` é protegida: mudanças entram por **Pull Request**,
+com os checks `PR checks (build + test + lint)` e `R8 anti-regressão (ZipExtraField)` exigidos. A cada
+merge na `main`, o **GitHub Actions** só publica se a tag `v<versionName>` ainda **não existir**.
+Para lançar uma versão, é obrigatório subir `versionName` e `versionCode`. Cada release leva o APK
+assinado e o `mapping-v<versionName>.txt`, usado para desofuscar crashes. No app, **CFG → SOBRE →
+CHECK UPDATE** consulta a release mais recente, compara a versão e **baixa + instala** com um toque.
 
 O processo completo (SemVer, changelog, passo a passo) está em
 **[RELEASING.md](RELEASING.md)**; o histórico de mudanças em **[CHANGELOG.md](CHANGELOG.md)**.
