@@ -50,7 +50,7 @@ data class VolumeState(val level: Int = 0, val max: Int = 15, val muted: Boolean
 /** Fachada da UI sobre o MediaController conectado ao [PlaybackService]. */
 class PlayerController(
     private val context: Context,
-    /** Log local p/ falhas de reprodução (o CrashLog mascara ?token= da URI do agente). */
+    /** Log local p/ falhas de reprodução (só no aparelho; o CrashLog mascara segredos por defesa). */
     private val crashLog: com.mpx.player.data.CrashLog? = null,
 ) {
 
@@ -69,19 +69,16 @@ class PlayerController(
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
 
-        // Antes nada tratava o erro: com o agente desktop parado a faixa remota ficava em 00:00,
-        // PAUSE e sem nenhuma mensagem. Agora vira linha "> ERRO ..." no CMD.LOG e vai p/ o log.
+        // Antes nada tratava o erro: a faixa ficava em 00:00, PAUSE e sem nenhuma mensagem.
+        // Agora vira linha "> ERRO ..." no CMD.LOG e vai p/ o log local.
         override fun onPlayerError(error: PlaybackException) {
-            val id = _state.value.currentId
-            val remote = id != null && id < 0 && id != -1L
-            val msg = playbackErrorMessage(error.errorCode, remote)
+            val msg = playbackErrorMessage(error.errorCode)
             _state.update { it.copy(error = reducePlayerError(it.error, PlayerErrorEvent.ERROR, msg)) }
             // errorCodeName (ex.: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED) não é minificado pelo R8,
-            // ao contrário do nome da classe; a causa original segue no stack (URI c/ token mascarada).
+            // ao contrário do nome da classe; a causa original segue no stack.
             // record faz I/O (append + releitura p/ contagem, até ~256 KB): fora da main thread.
-            val tag = if (remote) "PLAYER-DESKTOP" else "PLAYER"
             val wrapped = IllegalStateException("${error.errorCodeName}: ${error.message}", error)
-            crashLog?.let { log -> scope.launch(Dispatchers.IO) { log.record(tag, wrapped) } }
+            crashLog?.let { log -> scope.launch(Dispatchers.IO) { log.record("PLAYER", wrapped) } }
         }
 
         // Transição NÃO limpa o erro: o MediaController reentrega a transição (mascarada no
@@ -137,9 +134,11 @@ class PlayerController(
 
     fun play(tracks: List<Track>, startIndex: Int, label: String) {
         val c = controller ?: return
-        if (tracks.isEmpty()) return
+        // Só URIs locais: entrada remota antiga (http://... do desktop-sync da 1.7.0) é pulada.
+        val (queue, start) = playableQueue(tracks, startIndex) { it.uri.scheme }
+        if (queue.isEmpty()) return
         _state.update { it.copy(sourceLabel = label, error = null) }
-        c.setMediaItems(tracks.map { it.toMediaItem() }, startIndex.coerceIn(0, tracks.lastIndex), 0L)
+        c.setMediaItems(queue.map { it.toMediaItem() }, start, 0L)
         c.shuffleModeEnabled = false
         c.prepare()
         c.play()
@@ -226,7 +225,7 @@ class PlayerController(
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setArtworkUri(artUri ?: ContentUris.withAppendedId(ALBUM_ART, albumId))
+                .setArtworkUri(ContentUris.withAppendedId(ALBUM_ART, albumId))
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(Bundle().apply { putLong("albumId", albumId) })

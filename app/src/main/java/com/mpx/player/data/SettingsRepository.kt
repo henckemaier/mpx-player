@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -14,18 +13,9 @@ import com.mpx.player.model.EqSettings
 import com.mpx.player.model.UserSettings
 import com.mpx.player.ui.theme.CUSTOM_THEME
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "config_sys")
-
-/**
- * Pareamento com o agente desktop (host + TOKEN) em DataStore PRÓPRIO, para poder ser EXCLUÍDO do
- * backup/transferência (res/xml/data_extraction_rules.xml e backup_rules.xml) sem perder as demais
- * preferências (que seguem em "config_sys" e continuam no backup).
- */
-private val Context.pairingStore by preferencesDataStore(name = "ds_pairing")
 
 class SettingsRepository(private val context: Context) {
 
@@ -53,15 +43,9 @@ class SettingsRepository(private val context: Context) {
         val loud = booleanPreferencesKey("fx_loud")
     }
 
-    private object P {
-        val dsHost = stringPreferencesKey("ds_host")
-        val dsToken = stringPreferencesKey("ds_token")
-    }
+    val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
 
-    val settings: Flow<UserSettings> =
-        combine(context.dataStore.data, context.pairingStore.data) { prefs, pair -> prefs.toSettings(pair) }
-
-    private fun Preferences.toSettings(pair: Preferences): UserSettings {
+    private fun Preferences.toSettings(): UserSettings {
         val d = UserSettings()
         return UserSettings(
             theme = this[K.theme] ?: d.theme,
@@ -87,8 +71,6 @@ class SettingsRepository(private val context: Context) {
                 surround = this[K.surround] ?: false,
                 loudness = this[K.loud] ?: false,
             ),
-            desktopHost = pair[P.dsHost],
-            desktopToken = pair[P.dsToken],
         )
     }
 
@@ -116,28 +98,14 @@ class SettingsRepository(private val context: Context) {
     suspend fun incPlaylists() = context.dataStore.edit { it[K.playlists] = (it[K.playlists] ?: 0) + 1 }
 
     /**
-     * Pré-releases guardavam ds_host/ds_token no "config_sys", que VAI para o backup. Remove essas
-     * chaves legadas (idempotente; o pareamento novo vive em "ds_pairing", fora do backup).
+     * Migração 1.7.1: limpa pareamento/índice do desktop-sync removido (ver [LegacyDesktopCleanup]).
+     * Idempotente e tolerante a falha; não mexe nas músicas do usuário.
      */
-    suspend fun purgeLegacyPairing() {
-        val legacyHost = stringPreferencesKey("ds_host")
-        val legacyToken = stringPreferencesKey("ds_token")
-        if (context.dataStore.data.first().let { it.contains(legacyHost) || it.contains(legacyToken) }) {
-            context.dataStore.edit { it.remove(legacyHost); it.remove(legacyToken) }
-        }
-    }
-
-    /** Grava (ou limpa, com null) o agente desktop pareado numa única escrita. */
-    suspend fun setDesktop(host: String?, token: String?) = context.pairingStore.edit {
-        if (host.isNullOrBlank() || token.isNullOrBlank()) {
-            it.remove(P.dsHost); it.remove(P.dsToken)
-        } else {
-            it[P.dsHost] = host; it[P.dsToken] = token
-        }
-    }
+    suspend fun purgeLegacyDesktop(onError: (Throwable) -> Unit = {}): LegacyDesktopCleanup.Result =
+        LegacyDesktopCleanup.run(context.filesDir, context.dataStore, onError)
 
     suspend fun updateEq(transform: (EqSettings) -> EqSettings) = context.dataStore.edit { p ->
-        val cur = p.toSettings(emptyPreferences()).eq
+        val cur = p.toSettings().eq
         val n = transform(cur)
         p[K.eqOn] = n.enabled
         p[K.eqPreset] = n.preset

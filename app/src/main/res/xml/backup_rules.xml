@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- API <= 30 (fullBackupContent): mesmas exclusoes de data_extraction_rules.xml. -->
+<!-- API <= 30 (fullBackupContent): mesmas exclusoes de data_extraction_rules.xml.
+     LEGADO 1.7.0: o desktop-sync foi removido na 1.7.1 e a migracao apaga esses arquivos no start;
+     a exclusao fica so como defesa (backup feito antes do 1o start da 1.7.1 nao leva o token). -->
 <full-backup-content>
     <exclude domain="file" path="datastore/ds_pairing.preferences_pb" />
     <exclude domain="file" path="sync_index.json" />

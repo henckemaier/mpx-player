@@ -32,11 +32,8 @@ A **tag** da release é `v<versionName>` (ex.: `v1.5.0`) — criada automaticame
 O updater compara o `versionName` **numericamente, campo a campo** (esquerda → direita; campo que
 falta conta como `0`). Portanto a próxima versão precisa ser **numericamente maior** que a instalada.
 
-> **Estado atual:** `versionName = "1.7.0"`, `versionCode = 6`.
-> A próxima versão deve ser **maior que 1.7.0** — ex.: `1.7.1` (correção) ou `1.8.0` (recurso).
-
-O módulo `:desktop-agent` (agente do PC, ver [`desktop-agent/README.md`](desktop-agent/README.md)) **não
-é publicado pelo CI**: o `release.yml` só compila o APK do app. Seu empacotamento (jpackage) é manual.
+> **Estado atual:** `versionName = "1.7.1"`, `versionCode = 7`.
+> A próxima versão deve ser **maior que 1.7.1** — ex.: `1.7.2` (correção) ou `1.8.0` (recurso).
 
 ---
 

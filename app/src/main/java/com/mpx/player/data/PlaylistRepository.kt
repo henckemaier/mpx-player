@@ -62,6 +62,16 @@ object PlaylistLogic {
 
     // ---- serialização (org.json)
 
+    /**
+     * Quantas faixas da playlist EXISTEM na biblioteca (o "N TRK" da tela). Chaves órfãs — arquivo
+     * apagado, cartão SD ausente ou faixa do PC da 1.7.0 (desktop-sync removido) — não contam, mas
+     * NÃO são apagadas: a chave remota da 1.7.0 era o caminho relativo no PC e pode coincidir com uma
+     * chave local, então não dá para distingui-la com segurança. Antes do 1o scan (biblioteca ainda
+     * vazia) mostra o total salvo, para não piscar "0 TRK". PURO.
+     */
+    fun visibleCount(keys: List<String>, scanned: Boolean, present: (String) -> Boolean): Int =
+        if (!scanned) keys.size else keys.count(present)
+
     fun toJson(list: List<Playlist>): String {
         val arr = JSONArray()
         list.forEach { p ->

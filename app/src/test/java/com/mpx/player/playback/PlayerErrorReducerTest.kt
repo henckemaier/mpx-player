@@ -12,7 +12,7 @@ import org.junit.Test
 /** (B) do reteste final: a mensagem de erro do player tem de ficar visível de forma determinística. */
 class PlayerErrorReducerTest {
 
-    private val msg = "ERRO: AGENTE DESKTOP OFFLINE? VERIFIQUE O PC E A REDE"
+    private val msg = "ERRO: ARQUIVO NÃO ENCONTRADO"
 
     private fun run(vararg events: Pair<PlayerErrorEvent, String?>): String? =
         events.fold(null as String?) { cur, (e, m) -> reducePlayerError(cur, e, m) }
