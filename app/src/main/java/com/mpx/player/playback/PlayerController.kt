@@ -74,7 +74,8 @@ class PlayerController(
         override fun onPlayerError(error: PlaybackException) {
             val id = _state.value.currentId
             val remote = id != null && id < 0 && id != -1L
-            _state.update { it.copy(error = playbackErrorMessage(error.errorCode, remote)) }
+            val msg = playbackErrorMessage(error.errorCode, remote)
+            _state.update { it.copy(error = reducePlayerError(it.error, PlayerErrorEvent.ERROR, msg)) }
             // errorCodeName (ex.: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED) não é minificado pelo R8,
             // ao contrário do nome da classe; a causa original segue no stack (URI c/ token mascarada).
             // record faz I/O (append + releitura p/ contagem, até ~256 KB): fora da main thread.
@@ -83,9 +84,9 @@ class PlayerController(
             crashLog?.let { log -> scope.launch(Dispatchers.IO) { log.record(tag, wrapped) } }
         }
 
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            _state.update { it.copy(error = null) }
-        }
+        // Transição NÃO limpa o erro: o MediaController reentrega a transição (mascarada no
+        // setMediaItems) junto com o estado real da sessão, às vezes depois do onPlayerError.
+        // Ver reducePlayerError (reteste da Lupa: a mensagem sumia da tela).
     }
 
     fun connect() {
@@ -109,6 +110,7 @@ class PlayerController(
                 queue = ids,
                 index = if (ids.isEmpty()) -1 else c.currentMediaItemIndex,
                 isPlaying = c.isPlaying,
+                error = if (c.isPlaying) reducePlayerError(it.error, PlayerErrorEvent.STARTED_PLAYING) else it.error,
                 positionMs = c.currentPosition.coerceAtLeast(0),
                 durationMs = c.duration.takeIf { d -> d > 0 } ?: 0L,
                 shuffle = c.shuffleModeEnabled,
@@ -153,10 +155,12 @@ class PlayerController(
     }
 
     fun play() = controller?.run { prepare(); play() }
-    fun next() = controller?.seekToNext()
-    fun previous() = controller?.seekToPrevious()
+    private fun clearErrorByUser() = _state.update { it.copy(error = reducePlayerError(it.error, PlayerErrorEvent.USER_ACTION)) }
+
+    fun next() { clearErrorByUser(); controller?.seekToNext() }
+    fun previous() { clearErrorByUser(); controller?.seekToPrevious() }
     fun seekToFraction(f: Float) = controller?.run { if (duration > 0) seekTo((duration * f.coerceIn(0f, 1f)).toLong()) }
-    fun seekToIndex(i: Int) = controller?.run { seekTo(i, 0L); prepare(); play() }
+    fun seekToIndex(i: Int) { clearErrorByUser(); controller?.run { seekTo(i, 0L); prepare(); play() } }
     fun toggleShuffle() = controller?.run { shuffleModeEnabled = !shuffleModeEnabled }
     fun cycleRepeat() = controller?.run {
         repeatMode = when (repeatMode) {

@@ -80,6 +80,15 @@ class PairPayloadTest {
             .forEach { assertNull(it, parseLanHostPort(it)) }
     }
 
+    @Test fun `mensagem de conexao distingue token recusado, lockout e sem resposta`() {
+        assertTrue(connectErrorMessage(401).startsWith("TOKEN RECUSADO PELO PC"))
+        assertTrue(connectErrorMessage(403).startsWith("TOKEN RECUSADO PELO PC"))
+        assertTrue(connectErrorMessage(429).startsWith("MUITAS TENTATIVAS"))
+        assertTrue(connectErrorMessage(null).startsWith("SEM RESPOSTA"))
+        assertTrue(connectErrorMessage(200).startsWith("RESPOSTA INVÁLIDA"))
+        assertTrue(connectErrorMessage(500).contains("HTTP 500"))
+    }
+
     @Test fun `IPv6 nao e aceito`() {
         assertNull(parseLanHostPort("[fe80::1]:8080"))
         assertNull(parseLanHostPort("fe80::1:8080"))

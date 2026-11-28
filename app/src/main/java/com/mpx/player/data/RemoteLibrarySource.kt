@@ -204,7 +204,8 @@ class RemoteLibrarySource(
         val fetched = withContext(Dispatchers.IO) { runCatching { fetchLibrary(host, token) }.getOrNull() }
         if (fetched == null) {
             _tracks.value = emptyList()
-            _state.value = RemoteState(RemoteStatus.ERROR, host, 0, "SEM RESPOSTA · VERIFIQUE IP/TOKEN")
+            // Distingue token recusado (401/403), lockout (429) e sem resposta (rede/agente parado).
+            _state.value = RemoteState(RemoteStatus.ERROR, host, 0, connectErrorMessage(lastHttpStatus))
         } else {
             _tracks.value = fetched
             _state.value = RemoteState(RemoteStatus.CONNECTED, host, fetched.size)
@@ -212,9 +213,13 @@ class RemoteLibrarySource(
         }
     }
 
+    /** Status HTTP da última falha do GET (null = sem resposta). Só p/ a mensagem da tela Conectar. */
+    @Volatile private var lastHttpStatus: Int? = null
+
     private fun fetchLibrary(host: String, token: String): List<Track>? {
+        lastHttpStatus = null
         val body = httpGet("http://$host/library", token) ?: return null
-        val arr = runCatching { JSONArray(body) }.getOrNull() ?: return null
+        val arr = runCatching { JSONArray(body) }.getOrNull() ?: run { lastHttpStatus = 200; return null }
         val out = ArrayList<Track>(arr.length())
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
@@ -240,6 +245,7 @@ class RemoteLibrarySource(
         try {
             val code = conn.responseCode
             if (code != 200) {
+                lastHttpStatus = code
                 logFailure(IllegalStateException("HTTP $code em $url"), token)
                 null
             } else {

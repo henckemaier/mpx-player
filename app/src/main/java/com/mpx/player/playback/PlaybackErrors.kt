@@ -23,3 +23,20 @@ fun playbackErrorMessage(errorCode: Int, remote: Boolean): String {
         else -> "ERRO DE REPRODUÇÃO ($errorCode)"
     }
 }
+
+/** Eventos que podem mexer na mensagem de erro do player (ver [reducePlayerError]). */
+enum class PlayerErrorEvent { ERROR, USER_ACTION, STARTED_PLAYING, TRANSITION, PAUSED }
+
+/**
+ * Regra DETERMINÍSTICA da mensagem de erro (reteste da Lupa: com o agente parado o erro chegava,
+ * mas sumia da tela). O MediaController reentrega `onMediaItemTransition` (já mascarada no
+ * setMediaItems) quando chega o estado real da sessão — às vezes DEPOIS do `onPlayerError` — e o
+ * player pausa por causa do próprio erro. Então: o erro só some por AÇÃO do usuário
+ * (play/toggle/next/prev/seek de faixa) ou quando o player REALMENTE volta a tocar; transição e pausa
+ * não limpam. PURO.
+ */
+fun reducePlayerError(current: String?, event: PlayerErrorEvent, newError: String? = null): String? = when (event) {
+    PlayerErrorEvent.ERROR -> newError ?: current
+    PlayerErrorEvent.USER_ACTION, PlayerErrorEvent.STARTED_PLAYING -> null
+    PlayerErrorEvent.TRANSITION, PlayerErrorEvent.PAUSED -> current
+}

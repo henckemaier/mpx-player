@@ -88,3 +88,15 @@ private fun ipv4Octets(s: String): IntArray? {
     }
     return out
 }
+
+/**
+ * Mensagem da tela Conectar para uma falha do GET /library. [httpStatus] = status HTTP recebido
+ * (null = não houve resposta: conexão recusada, timeout, rede/cleartext). PURO.
+ */
+fun connectErrorMessage(httpStatus: Int?): String = when (httpStatus) {
+    null -> "SEM RESPOSTA · VERIFIQUE IP, PC LIGADO E MESMA REDE"
+    401, 403 -> "TOKEN RECUSADO PELO PC · REPAREIE (O TOKEN MUDA A CADA ARRANQUE DO AGENTE)"
+    429 -> "MUITAS TENTATIVAS · AGUARDE 1 MIN E TENTE DE NOVO"
+    200 -> "RESPOSTA INVÁLIDA DO PC · ATUALIZE O AGENTE"
+    else -> "O PC RESPONDEU HTTP $httpStatus · VERIFIQUE O AGENTE"
+}
