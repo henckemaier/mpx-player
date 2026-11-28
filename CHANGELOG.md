@@ -24,12 +24,12 @@ versionamento conforme [RELEASING.md](RELEASING.md).
 - Faixas do PC que estavam em playlists ou favoritas deixam de aparecer (como um arquivo apagado).
   A favorita **não migra** para a cópia offline em `Music/MPX`: a cópia continua na biblioteca e
   tocando normalmente, mas precisa ser favoritada de novo se você quiser.
+- Mensagens de erro do player ficaram genéricas (sem referência ao PC). Os erros continuam
+  aparecendo na tela e no log local.
 
 ### Corrigido
 - O contador de faixas das playlists (**N TRK**) conta só as faixas que existem na biblioteca.
   Antes, faixas do PC (1.7.0) ou arquivos apagados continuavam somando.
-- Mensagens de erro do player ficaram genéricas (sem referência ao PC). Os erros continuam
-  aparecendo na tela e no log local.
 
 ## [1.7.0] - 2026-11-27
 
